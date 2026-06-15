@@ -1,8 +1,0 @@
-packages
-workspace
-.idea
-linux
-.artifacts
-build
-full-static-test.dockerfile
-.DS_Store
