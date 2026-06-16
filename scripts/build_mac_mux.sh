@@ -70,14 +70,35 @@ print_dashboard() {
   echo -e "${BOLD}${BLUE}╔══════════════════════════════════════════════╗${RESET}"
   echo -e "${BOLD}${BLUE}║     OnTheSpot  ·  macOS Build Multiplexer    ║${RESET}"
   echo -e "${BOLD}${BLUE}╚══════════════════════════════════════════════╝${RESET}"
-  echo ""
+
+  local total_steps=${#STEPS[@]}
+  local completed_steps=0
+  for s in "${STEPS[@]}"; do
+    if [ "$(step_status "$s")" = "done" ]; then
+      ((completed_steps++))
+    fi
+  done
+
+  local percent=$(( completed_steps * 100 / total_steps ))
+  local bar_length=32
+  local filled_len=$(( completed_steps * bar_length / total_steps ))
+  local empty_len=$(( bar_length - filled_len ))
+
+  local bar_filled=""
+  for ((j=0; j<filled_len; j++)); do bar_filled="${bar_filled}█"; done
+
+  local bar_empty=""
+  for ((j=0; j<empty_len; j++)); do bar_empty="${bar_empty}░"; done
+
+  echo -e "  Progress: [${GREEN}${bar_filled}${RESET}${DIM}${bar_empty}${RESET}] ${percent}%\n"
+
   local i=1
-  for step in "${STEPS[@]}"; do
+  for s in "${STEPS[@]}"; do
     local status
-    status=$(step_status "$step")
-    local label="$(get_step_label "$step")"
+    status=$(step_status "$s")
+    local label="$(get_step_label "$s")"
     local icon color
-    if [ "$step" = "$active" ]; then
+    if [ "$s" = "$active" ]; then
       icon="⟳" ; color="${YELLOW}"
     elif [ "$status" = "done" ]; then
       icon="✔" ; color="${GREEN}"
@@ -87,8 +108,8 @@ print_dashboard() {
       icon="○" ; color="${DIM}${WHITE}"
     fi
     printf "  ${color}${BOLD}%s${RESET}  ${color}%-3s %s${RESET}\n" "$icon" "$i." "$label"
-    if [ "$step" = "$active" ]; then
-      echo -e "       ${DIM}└─ log: .build_logs/${step}.log${RESET}"
+    if [ "$s" = "$active" ]; then
+      echo -e "       ${DIM}└─ log: .build_logs/${s}.log${RESET}"
     fi
     (( i++ ))
   done
