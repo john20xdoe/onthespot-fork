@@ -78,9 +78,9 @@ print_dashboard() {
   # Go to home position instead of full clear to prevent flicker
   printf "\033[H"
   
-  echo -e "${BOLD}${BLUE}╔══════════════════════════════════════════════╗${RESET}"
-  echo -e "${BOLD}${BLUE}║     OnTheSpot  ·  macOS Build Multiplexer    ║${RESET}"
-  echo -e "${BOLD}${BLUE}╚══════════════════════════════════════════════╝${RESET}"
+  echo -e "${BOLD}${BLUE}╔══════════════════════════════════════════════╗${RESET}\033[K"
+  echo -e "${BOLD}${BLUE}║     OnTheSpot  ·  macOS Build Multiplexer    ║${RESET}\033[K"
+  echo -e "${BOLD}${BLUE}╚══════════════════════════════════════════════╝${RESET}\033[K"
 
   local total_steps=${#STEPS[@]}
   local completed_steps=0
@@ -101,7 +101,8 @@ print_dashboard() {
   local bar_empty=""
   for ((j=0; j<empty_len; j++)); do bar_empty="${bar_empty}░"; done
 
-  echo -e "  Progress: [${GREEN}${bar_filled}${RESET}${DIM}${bar_empty}${RESET}] ${percent}%\n"
+  echo -e "  Progress: [${GREEN}${bar_filled}${RESET}${DIM}${bar_empty}${RESET}] ${percent}%\033[K"
+  echo -e "\033[K"
 
   local i=1
   for s in "${STEPS[@]}"; do
@@ -110,7 +111,7 @@ print_dashboard() {
     local label="$(get_step_label "$s")"
     local icon color
     if [ "$s" = "$active" ]; then
-      icon="$spinner_frame" ; color="${YELLOW}"
+      icon="$spinner_frame" ; color="${CYAN}"
     elif [ "$status" = "done" ]; then
       icon="✔" ; color="${GREEN}"
     elif [ "$status" = "failed" ]; then
@@ -118,13 +119,26 @@ print_dashboard() {
     else
       icon="○" ; color="${DIM}${WHITE}"
     fi
-    printf "  ${color}${BOLD}%s${RESET}  ${color}%-3s %s${RESET}\n" "$icon" "$i." "$label"
+    printf "  ${color}${BOLD}%s${RESET}  ${color}%-3s %s${RESET}\033[K\n" "$icon" "$i." "$label"
     if [ "$s" = "$active" ]; then
-      echo -e "       ${DIM}└─ log: .build_logs/${s}.log${RESET}"
+      echo -e "       ${DIM}└─ log: .build_logs/${s}.log${RESET}\033[K"
+      local clean_line=""
+      if [ -f "$LOG_DIR/${s}.log" ]; then
+        local last_line
+        last_line=$(tail -n 1 "$LOG_DIR/${s}.log" 2>/dev/null | tr -d '\r\n' | cut -c1-65)
+        if [ -n "$last_line" ]; then
+          clean_line=$(echo "$last_line" | sed 's/\x1b\[[0-9;]*m//g')
+        fi
+      fi
+      if [ -n "$clean_line" ]; then
+        printf "          ${CYAN}▶  %s${RESET}\033[K\n" "$clean_line"
+      else
+        printf "          ${DIM}▶  waiting...${RESET}\033[K\n"
+      fi
     fi
     (( i++ ))
   done
-  echo ""
+  echo -e "\033[K"
   # Clear any remaining lines below the dashboard
   printf "\033[J"
 }
@@ -252,14 +266,15 @@ run_cleanup() {
 run_step() {
   local step="$1"
   print_dashboard "$step"
-  echo -e "  ${CYAN}Running: $(get_step_label "$step")${RESET}"
-  echo -e "  ${DIM}Tail log: tail -f .build_logs/${step}.log${RESET}\n"
+  echo -e "  ${CYAN}Running: $(get_step_label "$step")${RESET}\033[K"
+  echo -e "  ${DIM}Tail log: tail -f .build_logs/${step}.log${RESET}\033[K"
+  echo -e "\033[K"
 
   rm -f "$STATE_DIR/$step.failed"
   : > "$LOG_DIR/${step}.log"   # truncate log
 
-  # Spin characters (braille animation)
-  local spin_chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  # Spin characters (highly visible rotating quadrant blocks)
+  local spin_chars=("▘" "▝" "▗" "▖")
   local spin_count=${#spin_chars[@]}
   local idx=0
 
@@ -275,8 +290,9 @@ run_step() {
     local frame="${spin_chars[$idx]}"
     idx=$(( (idx + 1) % spin_count ))
     print_dashboard "$step" "$frame"
-    echo -e "  ${CYAN}Running: $(get_step_label "$step")${RESET}"
-    echo -e "  ${DIM}Tail log: tail -f .build_logs/${step}.log${RESET}\n"
+    echo -e "  ${CYAN}Running: $(get_step_label "$step")${RESET}\033[K"
+    echo -e "  ${DIM}Tail log: tail -f .build_logs/${step}.log${RESET}\033[K"
+    echo -e "\033[K"
     sleep 0.1
   done
   
@@ -289,15 +305,16 @@ run_step() {
   if [ $status -eq 0 ]; then
     mark_done "$step"
     print_dashboard
-    echo -e "  ${GREEN}✔ Done: $(get_step_label "$step")${RESET}\n"
+    echo -e "  ${GREEN}✔ Done: $(get_step_label "$step")${RESET}\033[K"
+    echo -e "\033[K"
     sleep 0.5
   else
     mark_failed "$step"
     print_dashboard
-    echo -e "\n  ${RED}✘ FAILED: $(get_step_label "$step")${RESET}"
-    echo -e "  ${DIM}Last 5 lines of .build_logs/${step}.log:${RESET}"
-    tail -n 5 "$LOG_DIR/${step}.log" | sed 's/^/    /'
-    echo -e "\n  ${DIM}See full log: .build_logs/${step}.log${RESET}"
+    echo -e "\033[K\n  ${RED}✘ FAILED: $(get_step_label "$step")${RESET}\033[K"
+    echo -e "  ${DIM}Last 5 lines of .build_logs/${step}.log:${RESET}\033[K"
+    tail -n 5 "$LOG_DIR/${step}.log" | sed 's/^/    /' | sed 's/$/\x1b[K/'
+    echo -e "\033[K\n  ${DIM}See full log: .build_logs/${step}.log${RESET}\033[K"
     exit 1
   fi
 }
