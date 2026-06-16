@@ -37,6 +37,7 @@ pyinstaller --onefile \
     --add-data="src/onthespot/qt/qtui/*.ui:onthespot/qt/qtui" \
     --add-data="src/onthespot/resources/icons/*.png:onthespot/resources/icons" \
     --add-data="src/onthespot/resources/translations/*.qm:onthespot/resources/translations" \
+    --add-data="src/onthespot/resources/theme.qss:onthespot/resources" \
     $FFBIN \
     --paths="src/onthespot" \
     --name=onthespot-gui \

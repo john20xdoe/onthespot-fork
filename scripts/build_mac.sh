@@ -4,7 +4,7 @@ echo "========= OnTheSpot macOS Build Script =========="
 
 
 echo " => Cleaning up previous builds and preparing the environment..."
-rm -f ./dist/OnTheSpot.tar.gz
+rm -f ./dist/OnTheSpotRebuilt.tar.gz
 mkdir build
 mkdir dist
 mkdir builder
@@ -42,26 +42,27 @@ FFBIN="--add-binary=dist/ffmpeg:onthespot/bin/ffmpeg"
 
 
 echo " => Running PyInstaller to create .app package..."
-pyinstaller --windowed \
+pyinstaller --windowed --noconfirm \
     --hidden-import="zeroconf._utils.ipaddress" \
     --hidden-import="zeroconf._handlers.answers" \
     --add-data="src/onthespot/qt/qtui/*.ui:onthespot/qt/qtui" \
     --add-data="src/onthespot/resources/icons/*.png:onthespot/resources/icons" \
     --add-data="src/onthespot/resources/translations/*.qm:onthespot/resources/translations" \
+    --add-data="src/onthespot/resources/theme.qss:onthespot/resources" \
     $FFBIN \
     --paths="src/onthespot" \
-    --name="OnTheSpot" \
+    --name="OnTheSpotRebuilt" \
     --icon="src/onthespot/resources/icons/onthespot.png" \
     src/portable.py
 
 
 echo " => Setting executable permissions..."
-chmod +x dist/OnTheSpot.app
+chmod +x dist/OnTheSpotRebuilt.app
 
 
 echo " => Creating dmg..."
 mkdir -p dist/dmg
-mv dist/OnTheSpot.app dist/dmg/OnTheSpot.app
+mv dist/OnTheSpotRebuilt.app dist/dmg/OnTheSpotRebuilt.app
 ln -s /Applications dist/dmg
 
 echo "# Login Issues
@@ -81,11 +82,11 @@ After all this, if you experience an error while trying to launch
 the app you will need to open the 'Applications' folder, right-click
 the app, and click open anyway." > dist/dmg/readme.txt
 
-hdiutil create -srcfolder dist/dmg -format UDZO -o dist/OnTheSpot.dmg
+hdiutil create -srcfolder dist/dmg -format UDZO -o dist/OnTheSpotRebuilt.dmg
 
 
 echo " => Cleaning up temporary files..."
 rm -rf __pycache__ build builder venv *.spec
 
 
-echo " => Done! .dmg available in 'dist/OnTheSpot.dmg'."
+echo " => Done! .dmg available in 'dist/OnTheSpotRebuilt.dmg'."

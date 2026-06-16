@@ -40,6 +40,7 @@ pyinstaller --onefile --noconsole --noconfirm ^
     --add-data="src/onthespot/resources/translations/*.qm;onthespot/resources/translations" ^
     --add-data="src/onthespot/qt/qtui/*.ui;onthespot/qt/qtui" ^
     --add-data="src/onthespot/resources/icons/*.png;onthespot/resources/icons" ^
+    --add-data="src/onthespot/resources/theme.qss;onthespot/resources" ^
     --add-binary="build/ffmpeg/ffmpeg-7.1-essentials_build/bin/ffmpeg.exe;onthespot/bin/ffmpeg" ^
     --paths="src/onthespot" ^
     --name="OnTheSpot" ^

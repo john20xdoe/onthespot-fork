@@ -16,6 +16,13 @@ STATE_DIR="$ROOT/.build_state"
 LOG_DIR="$ROOT/.build_logs"
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 
+# Hide cursor and restore on exit
+printf "\033[?25l"
+restore_cursor() {
+  printf "\033[?25h"
+}
+trap restore_cursor EXIT
+
 # ── ANSI colours ─────────────────────────────────────────────
 RESET='\033[0m'
 BOLD='\033[1m'
@@ -42,7 +49,7 @@ get_step_label() {
     env_setup) echo "Prepare environment & venv" ;;
     pip_install) echo "Install Python dependencies" ;;
     ffmpeg) echo "Build / acquire ffmpeg binary" ;;
-    pyinstaller) echo "Run PyInstaller → OnTheSpot.app" ;;
+    pyinstaller) echo "Run PyInstaller → OnTheSpotRebuilt.app" ;;
     package_dmg) echo "Package into .dmg" ;;
     cleanup) echo "Clean up build artifacts" ;;
     *) echo "$1" ;;
@@ -66,7 +73,11 @@ step_status() {
 # ── Dashboard ─────────────────────────────────────────────────
 print_dashboard() {
   local active="${1:-}"
-  clear
+  local spinner_frame="${2:-⟳}"
+  
+  # Go to home position instead of full clear to prevent flicker
+  printf "\033[H"
+  
   echo -e "${BOLD}${BLUE}╔══════════════════════════════════════════════╗${RESET}"
   echo -e "${BOLD}${BLUE}║     OnTheSpot  ·  macOS Build Multiplexer    ║${RESET}"
   echo -e "${BOLD}${BLUE}╚══════════════════════════════════════════════╝${RESET}"
@@ -99,7 +110,7 @@ print_dashboard() {
     local label="$(get_step_label "$s")"
     local icon color
     if [ "$s" = "$active" ]; then
-      icon="⟳" ; color="${YELLOW}"
+      icon="$spinner_frame" ; color="${YELLOW}"
     elif [ "$status" = "done" ]; then
       icon="✔" ; color="${GREEN}"
     elif [ "$status" = "failed" ]; then
@@ -114,13 +125,15 @@ print_dashboard() {
     (( i++ ))
   done
   echo ""
+  # Clear any remaining lines below the dashboard
+  printf "\033[J"
 }
 
 # ── Step implementations ──────────────────────────────────────
 
 run_env_setup() {
   local log="$LOG_DIR/env_setup.log"
-  rm -f "$ROOT/dist/OnTheSpot.tar.gz"
+  rm -f "$ROOT/dist/OnTheSpotRebuilt.tar.gz"
   mkdir -p "$ROOT/build" "$ROOT/dist" "$ROOT/builder"
   python3 -m venv "$ROOT/venv" >> "$log" 2>&1
 }
@@ -172,15 +185,16 @@ run_pyinstaller() {
     echo "WARNING: dist/ffmpeg not found — bundling without ffmpeg." >> "$log"
   fi
 
-  pyinstaller --windowed \
+  pyinstaller --windowed --noconfirm \
     --hidden-import="zeroconf._utils.ipaddress" \
     --hidden-import="zeroconf._handlers.answers" \
     --add-data="$ROOT/src/onthespot/qt/qtui/*.ui:onthespot/qt/qtui" \
     --add-data="$ROOT/src/onthespot/resources/icons/*.png:onthespot/resources/icons" \
     --add-data="$ROOT/src/onthespot/resources/translations/*.qm:onthespot/resources/translations" \
+    --add-data="$ROOT/src/onthespot/resources/theme.qss:onthespot/resources" \
     $FFBIN \
     --paths="$ROOT/src/onthespot" \
-    --name="OnTheSpot" \
+    --name="OnTheSpotRebuilt" \
     --icon="$ROOT/src/onthespot/resources/icons/onthespot.png" \
     "$ROOT/src/portable.py" \
     --distpath "$ROOT/dist" \
@@ -191,15 +205,15 @@ run_pyinstaller() {
 
 run_package_dmg() {
   local log="$LOG_DIR/package_dmg.log"
-  if [ ! -d "$ROOT/dist/OnTheSpot.app" ]; then
-    echo "ERROR: OnTheSpot.app not found! PyInstaller must have failed silently." >> "$log"
+  if [ ! -d "$ROOT/dist/OnTheSpotRebuilt.app" ]; then
+    echo "ERROR: OnTheSpotRebuilt.app not found! PyInstaller must have failed silently." >> "$log"
     return 1
   fi
-  chmod +x "$ROOT/dist/OnTheSpot.app" >> "$log" 2>&1
+  chmod +x "$ROOT/dist/OnTheSpotRebuilt.app" >> "$log" 2>&1
   mkdir -p "$ROOT/dist/dmg"
   # Clean up any previous dmg staging
-  rm -rf "$ROOT/dist/dmg/OnTheSpot.app" "$ROOT/dist/dmg/Applications"
-  mv "$ROOT/dist/OnTheSpot.app" "$ROOT/dist/dmg/OnTheSpot.app" || return 1
+  rm -rf "$ROOT/dist/dmg/OnTheSpotRebuilt.app" "$ROOT/dist/dmg/Applications"
+  mv "$ROOT/dist/OnTheSpotRebuilt.app" "$ROOT/dist/dmg/OnTheSpotRebuilt.app" || return 1
   ln -s /Applications "$ROOT/dist/dmg/Applications"
 
   cat > "$ROOT/dist/dmg/readme.txt" <<'EOF'
@@ -223,9 +237,9 @@ open the 'Applications' folder, right-click the app, and
 click "Open Anyway".
 EOF
 
-  rm -f "$ROOT/dist/OnTheSpot.dmg"
+  rm -f "$ROOT/dist/OnTheSpotRebuilt.dmg"
   hdiutil create -srcfolder "$ROOT/dist/dmg" \
-    -format UDZO -o "$ROOT/dist/OnTheSpot.dmg" >> "$log" 2>&1
+    -format UDZO -o "$ROOT/dist/OnTheSpotRebuilt.dmg" >> "$log" 2>&1
 }
 
 run_cleanup() {
@@ -244,13 +258,37 @@ run_step() {
   rm -f "$STATE_DIR/$step.failed"
   : > "$LOG_DIR/${step}.log"   # truncate log
 
+  # Spin characters (braille animation)
+  local spin_chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  local spin_count=${#spin_chars[@]}
+  local idx=0
+
   set +e
-  "run_$step"
+  # Run step function in a background subshell enforcing set -e, redirecting all outputs to the log
+  ( set -e; "run_$step" ) >> "$LOG_DIR/${step}.log" 2>&1 &
+  local pid=$!
+  
+  # Trap Ctrl-C to kill the background process if interrupted
+  trap 'kill $pid 2>/dev/null; exit 1' INT TERM
+  
+  while kill -0 $pid 2>/dev/null; do
+    local frame="${spin_chars[$idx]}"
+    idx=$(( (idx + 1) % spin_count ))
+    print_dashboard "$step" "$frame"
+    echo -e "  ${CYAN}Running: $(get_step_label "$step")${RESET}"
+    echo -e "  ${DIM}Tail log: tail -f .build_logs/${step}.log${RESET}\n"
+    sleep 0.1
+  done
+  
+  # Reset trap
+  trap - INT TERM
+  wait $pid
   local status=$?
   set -e
 
   if [ $status -eq 0 ]; then
     mark_done "$step"
+    print_dashboard
     echo -e "  ${GREEN}✔ Done: $(get_step_label "$step")${RESET}\n"
     sleep 0.5
   else
@@ -319,7 +357,55 @@ case "${1:-}" in
     ;;
 esac
 
+check_overwrite_dist() {
+  if [ -d "$ROOT/dist" ]; then
+    local has_non_ffmpeg=0
+    for item in "$ROOT/dist"/*; do
+      if [ -e "$item" ]; then
+        local name
+        name=$(basename "$item")
+        if [ "$name" != "ffmpeg" ] && [ "$name" != ".DS_Store" ]; then
+          has_non_ffmpeg=1
+          break
+        fi
+      fi
+    done
+    if [ "$has_non_ffmpeg" -eq 1 ]; then
+      # Make sure cursor is visible for prompt
+      printf "\033[?25h"
+      echo -e "${YELLOW}Warning: Build output directory 'dist/' is not empty and contains existing build outputs.${RESET}"
+      read -p "Overwrite and replace the built DMG/app? (y/n): " confirm
+      # Re-hide cursor
+      printf "\033[?25l"
+      if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Cleaning existing build outputs from dist/...${RESET}"
+        for item in "$ROOT/dist"/*; do
+          if [ -e "$item" ]; then
+            local name
+            name=$(basename "$item")
+            if [ "$name" != "ffmpeg" ] && [ "$name" != ".DS_Store" ]; then
+              rm -rf "$item"
+            fi
+          fi
+        done
+        # Reset entire build state to ensure clean build from scratch
+        echo -e "${YELLOW}Resetting build state...${RESET}"
+        rm -rf "$STATE_DIR"
+        mkdir -p "$STATE_DIR"
+      else
+        echo -e "${RED}Build aborted by user.${RESET}"
+        exit 1
+      fi
+    fi
+  fi
+}
+
 # Default: run all pending steps
+check_overwrite_dist
+
+# Clear screen once at start of build
+clear
+
 echo -e "\n${BOLD}Starting OnTheSpot macOS build...${RESET}\n"
 for step in "${STEPS[@]}"; do
   if step_done "$step"; then
@@ -330,4 +416,4 @@ for step in "${STEPS[@]}"; do
 done
 
 print_dashboard
-echo -e "${BOLD}${GREEN}Build complete! → dist/OnTheSpot.dmg${RESET}\n"
+echo -e "${BOLD}${GREEN}Build complete! → dist/OnTheSpotRebuilt.dmg${RESET}\n"
