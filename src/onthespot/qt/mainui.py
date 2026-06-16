@@ -5,7 +5,7 @@ import time
 import traceback
 from urllib3.exceptions import MaxRetryError, NewConnectionError
 from PyQt6 import uic, QtGui
-from PyQt6.QtCore import QThread, QDir, Qt, pyqtSignal, QObject, QTimer
+from PyQt6.QtCore import QThread, QDir, Qt, pyqtSignal, QObject, QTimer, QSize
 from PyQt6.QtGui import QIcon, QColor
 from PyQt6.QtWidgets import QApplication, QMainWindow, QHeaderView, QLabel, QPushButton, QProgressBar, QTableWidgetItem, QFileDialog, QRadioButton, QHBoxLayout, QWidget, QColorDialog
 from ..accounts import get_account_token, FillAccountPool
@@ -22,7 +22,6 @@ from ..api.crunchyroll import crunchyroll_add_account, crunchyroll_get_episode_m
 from ..downloader import DownloadWorker, RetryWorker
 from ..otsconfig import config, cache_dir
 from ..runtimedata import account_pool, download_queue, download_queue_lock, get_init_tray, parsing, parsing_lock, pending, pending_lock, get_logger, temp_download_path
-from .dl_progressbtn import DownloadActionsButtons
 from .settings import load_config, save_config
 from .thumb_listitem import LabelWithThumb
 from ..utils import is_latest_release, open_item, format_bytes
@@ -88,7 +87,7 @@ class MainWindow(QMainWindow):
         QApplication.setStyle("fusion")
         uic.loadUi(os.path.join(self.path, "qtui", "main.ui"), self)
         self.setWindowIcon(self.get_icon('onthespot'))
-        self.centralwidget.setStyleSheet(config.get('theme'))
+        self.apply_theme()
 
         self.start_url = start_url
         logger.info(f"Initialising main window, logging session : {config.session_uuid}")
@@ -128,6 +127,14 @@ class MainWindow(QMainWindow):
 
         # Set the table header properties
         self.set_table_props()
+
+        # Enable custom context menu for tables
+        self.tbl_dl_progress.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tbl_dl_progress.customContextMenuRequested.connect(self.on_download_table_context_menu)
+        
+        self.tbl_search_results.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tbl_search_results.customContextMenuRequested.connect(self.on_search_table_context_menu)
+
         logger.info("Main window init completed !")
 
 
@@ -138,29 +145,92 @@ class MainWindow(QMainWindow):
         return self.icon_cache[name]
 
 
+    def compile_qss(self, bg_color_hex):
+        from PyQt6.QtGui import QColor
+        color = QColor(bg_color_hex)
+        if not color.isValid():
+            color = QColor("#282828")
+        
+        r, g, b = color.red(), color.green(), color.blue()
+        luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+        
+        # Define variable values based on luminance
+        if luminance < 128:
+            # Dark theme colors
+            variables = {
+                "@BACKGROUND_COLOR": color.name(),
+                "@TEXT_COLOR": "#ffffff",
+                "@BORDER_COLOR": "#444444",
+                "@INPUT_BG": "#1e1e1e",
+                "@BUTTON_BG": "#333333",
+                "@BUTTON_HOVER": "#444444",
+                "@BUTTON_ACTIVE": "#555555",
+                "@ACCENT_COLOR": "#2596be",
+                "@ACCENT_TEXT_COLOR": "#ffffff"
+            }
+        else:
+            # Light theme colors
+            variables = {
+                "@BACKGROUND_COLOR": color.name(),
+                "@TEXT_COLOR": "#000000",
+                "@BORDER_COLOR": "#cccccc",
+                "@INPUT_BG": "#ffffff",
+                "@BUTTON_BG": "#eeeeee",
+                "@BUTTON_HOVER": "#dddddd",
+                "@BUTTON_ACTIVE": "#cccccc",
+                "@ACCENT_COLOR": "#2596be",
+                "@ACCENT_TEXT_COLOR": "#ffffff"
+            }
+            
+        qss_path = os.path.join(self.path, "..", "resources", "theme.qss")
+        try:
+            with open(qss_path, "r", encoding="utf-8") as f:
+                qss_content = f.read()
+            for var, val in variables.items():
+                qss_content = qss_content.replace(var, val)
+                
+            arrow_icon_path = os.path.join(config.app_root, 'resources', 'icons', 'collapse_down.png')
+            arrow_icon_path = arrow_icon_path.replace("\\", "/")
+            qss_content = qss_content.replace("placeholder_arrow_down", arrow_icon_path)
+            
+            return qss_content
+        except Exception as e:
+            logger.error(f"Failed to compile theme.qss: {e}")
+            return f"background-color: {color.name()}; color: {'white' if luminance < 128 else 'black'};"
+
+
+    def apply_theme(self):
+        theme_str = config.get('theme')
+        import re
+        match = re.search(r'background-color:\s*(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)', theme_str)
+        bg_color = match.group(1) if match else "#282828"
+        compiled_qss = self.compile_qss(bg_color)
+        self.setStyleSheet(compiled_qss)
+
+
     def open_theme_dialog(self):
         colorpicker = QColorDialog(self)
         colorpicker.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         colorpicker.setWindowFlag(Qt.WindowType.Dialog, True)
         colorpicker.setWindowTitle("OnTheSpot - Color Picker")
-        colorpicker.setStyleSheet(config.get('theme'))
-
+        
+        theme_str = config.get('theme')
+        import re
+        match = re.search(r'background-color:\s*(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)', theme_str)
+        bg_color = match.group(1) if match else "#282828"
+        colorpicker.setStyleSheet(self.compile_qss(bg_color))
+ 
         if colorpicker.exec() == QColorDialog.DialogCode.Accepted:
             color = colorpicker.selectedColor()
-
+ 
             if color.isValid():
                 r, g, b = color.red(), color.green(), color.blue()
                 luminance = (0.299 * r + 0.587 * g + 0.114 * b)
-
-                if luminance < 128:
-                    # Dark color, set light font and progress bar
-                    stylesheet = f'background-color: {color.name()}; color: white;'
-                else:
-                    # Light color, set dark font and progress bar
-                    stylesheet = f'background-color: {color.name()}; color: black;'
+ 
+                stylesheet = f"background-color: {color.name()}; color: {'white' if luminance < 128 else 'black'};"
                 config.set('theme', stylesheet)
                 config.save()
-                self.centralwidget.setStyleSheet(stylesheet)
+                self.apply_theme()
                 self.__splash_dialog.update_theme(stylesheet)
 
 
@@ -205,11 +275,7 @@ class MainWindow(QMainWindow):
 
         self.mirror_spotify_playback.stateChanged.connect(self.manage_mirror_spotify_playback)
 
-        self.settings_bookmark_accounts.clicked.connect(lambda: self.settings_scroll_area.verticalScrollBar().setValue(0))
-        self.settings_bookmark_general.clicked.connect(lambda: self.settings_scroll_area.verticalScrollBar().setValue(328))
-        self.settings_bookmark_audio_downloads.clicked.connect(lambda: self.settings_scroll_area.verticalScrollBar().setValue(1176))
-        self.settings_bookmark_audio_metadata.clicked.connect(lambda: self.settings_scroll_area.verticalScrollBar().setValue(2019))
-        self.settings_bookmark_video_downloads.clicked.connect(lambda: self.settings_scroll_area.verticalScrollBar().setValue(9999))
+
 
 
         self.clear_cache.clicked.connect(lambda:
@@ -231,6 +297,8 @@ class MainWindow(QMainWindow):
         self.tbl_sessions.horizontalHeader().setSectionsMovable(True)
         self.tbl_sessions.horizontalHeader().setSectionsClickable(True)
         self.tbl_sessions.horizontalHeader().resizeSection(0, 16)
+        self.tbl_sessions.setIconSize(QSize(20, 20))
+        self.tbl_sessions.verticalHeader().setDefaultSectionSize(36)
         for i in range(1, 7):
             self.tbl_sessions.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
         self.set_login_fields()
@@ -239,6 +307,7 @@ class MainWindow(QMainWindow):
         #self.tbl_search_results.setSortingEnabled(True)
         self.tbl_search_results.horizontalHeader().setSectionsMovable(True)
         self.tbl_search_results.horizontalHeader().setSectionsClickable(True)
+        self.tbl_search_results.setIconSize(QSize(20, 20))
         self.tbl_search_results.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for i in range(1,5):
             self.tbl_search_results.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
@@ -247,10 +316,11 @@ class MainWindow(QMainWindow):
         #self.tbl_dl_progress.setSortingEnabled(True)
         self.tbl_dl_progress.horizontalHeader().setSectionsMovable(True)
         self.tbl_dl_progress.horizontalHeader().setSectionsClickable(True)
+        self.tbl_dl_progress.setIconSize(QSize(20, 20))
         if not config.get("debug_mode"):
             self.tbl_dl_progress.setColumnWidth(0, 0)
         self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for i in range(2,7):
+        for i in range(2,8):
             self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
 
         return True
@@ -267,7 +337,7 @@ class MainWindow(QMainWindow):
 
 
     def select_dir(self, output):
-        self.setStyleSheet(config.get('theme'))
+        self.apply_theme()
         path = QFileDialog.getExistingDirectory(self, 'OnTheSpot - Select Directory', os.path.expanduser("~"))
         if path.strip() != '':
             output.setText(QDir.toNativeSeparators(path))
@@ -343,12 +413,6 @@ class MainWindow(QMainWindow):
 
 
     def add_item_to_download_list(self, item, item_metadata):
-        # Skip rendering QButtons if they are not in use
-        copy_btn = None
-        open_btn = None
-        locate_btn = None
-        delete_btn = None
-
         # Items
         pbar = QProgressBar()
         pbar.setStyleSheet("""
@@ -362,50 +426,14 @@ class MainWindow(QMainWindow):
         """)
         pbar.setValue(0)
         pbar.setMinimumHeight(30)
-        if config.get("download_copy_btn"):
-            copy_btn = QPushButton()
-            #copy_btn.setText('Copy')
-            copy_btn.setIcon(self.get_icon('link'))
-            copy_btn.setToolTip(self.tr('Copy'))
-            copy_btn.setMinimumHeight(30)
-            copy_btn.hide()
-        cancel_btn = QPushButton()
-        # cancel_btn.setText('Cancel')
-        cancel_btn.setIcon(self.get_icon('stop'))
-        cancel_btn.setToolTip(self.tr('Cancel'))
-        cancel_btn.setMinimumHeight(30)
-        cancel_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        retry_btn = QPushButton()
-        #retry_btn.setText('Retry')
-        retry_btn.setIcon(self.get_icon('retry'))
-        retry_btn.setToolTip(self.tr('Retry'))
-        retry_btn.setMinimumHeight(30)
-        retry_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        retry_btn.hide()
-        if config.get("download_open_btn"):
-            open_btn = QPushButton()
-            #open_btn.setText('Open')
-            open_btn.setIcon(self.get_icon('file'))
-            open_btn.setToolTip(self.tr('Open'))
-            open_btn.setMinimumHeight(30)
-            open_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            open_btn.hide()
-        if config.get("download_locate_btn"):
-            locate_btn = QPushButton()
-            #locate_btn.setText('Locate')
-            locate_btn.setIcon(self.get_icon('folder'))
-            locate_btn.setToolTip(self.tr('Locate'))
-            locate_btn.setMinimumHeight(30)
-            locate_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            locate_btn.hide()
-        if config.get("download_delete_btn"):
-            delete_btn = QPushButton()
-            #delete_btn.setText('Delete')
-            delete_btn.setIcon(self.get_icon('trash'))
-            delete_btn.setToolTip(self.tr('Delete'))
-            delete_btn.setMinimumHeight(30)
-            delete_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            delete_btn.hide()
+
+        actions_btn = QPushButton()
+        actions_btn.setText('...')
+        actions_btn.setMinimumHeight(30)
+        actions_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        actions_btn.clicked.connect(lambda checked, lid=item['local_id'], btn=actions_btn: 
+            self.show_download_item_context_menu(lid, btn.mapToGlobal(btn.rect().bottomLeft()))
+        )
 
         item_by = item_metadata.get('artists') if item_metadata.get('artists') else item_metadata.get('show_name')
 
@@ -429,7 +457,6 @@ class MainWindow(QMainWindow):
         status_label = QLabel(self.tbl_dl_progress)
         status_label.setText(self.tr("Waiting"))
         status_label.setStyleSheet("background-color: transparent;")
-        actions = DownloadActionsButtons(item['local_id'], item_metadata, pbar, copy_btn, cancel_btn, retry_btn, open_btn, locate_btn, delete_btn)
 
         rows = self.tbl_dl_progress.rowCount()
         self.tbl_dl_progress.insertRow(rows)
@@ -454,7 +481,8 @@ class MainWindow(QMainWindow):
         self.tbl_dl_progress.setItem(rows, 3, QTableWidgetItem(item_category))
         self.tbl_dl_progress.setItem(rows, 4, service_label)
         self.tbl_dl_progress.setCellWidget(rows, 5, status_label)
-        self.tbl_dl_progress.setCellWidget(rows, 6, actions)
+        self.tbl_dl_progress.setCellWidget(rows, 6, pbar)
+        self.tbl_dl_progress.setCellWidget(rows, 7, actions_btn)
 
         # Hide if filter is applied
         self.update_table_visibility()
@@ -472,21 +500,14 @@ class MainWindow(QMainWindow):
                 'playlist_name': playlist_name,
                 'playlist_by': playlist_by,
                 'playlist_number': item.get('playlist_number'),
+                'item_metadata': item_metadata,
                 "gui": {
                     "item_label": item_label,
                     "status_label": status_label,
                     "progress_bar": pbar,
-                    "btn": {
-                        'actions': actions,
-                        "copy": copy_btn,
-                        "cancel": cancel_btn,
-                        "retry": retry_btn,
-                        "open": open_btn,
-                        "locate": locate_btn,
-                        "delete": delete_btn
-                        }
-                    }
+                    "actions_btn": actions_btn
                 }
+            }
 
 
     def update_item_in_download_list(self, item, status, progress):
@@ -495,36 +516,6 @@ class MainWindow(QMainWindow):
             item['gui']['status_label'].setText(status)
             item['gui']['progress_bar'].setValue(progress)
             self.update_table_visibility()
-            if item['item_status'] == 'Unavailable':
-                item['gui']["btn"]['cancel'].hide()
-                if config.get("download_copy_btn"):
-                    item['gui']['btn']['copy'].show()
-                item['gui']["btn"]['retry'].hide()
-                return
-            elif progress == 0:
-                item['gui']["btn"]['cancel'].hide()
-                if config.get("download_copy_btn"):
-                    item['gui']['btn']['copy'].show()
-                item['gui']["btn"]['retry'].show()
-                return
-            elif progress == 100:
-                item['gui']['btn']['cancel'].hide()
-                item['gui']['btn']['retry'].hide()
-                if config.get("download_copy_btn"):
-                    item['gui']['btn']['copy'].show()
-                if config.get("download_open_btn"):
-                    item['gui']['btn']['open'].show()
-                if config.get("download_locate_btn"):
-                    item['gui']['btn']['locate'].show()
-                if config.get("download_delete_btn"):
-                    item['gui']['btn']['delete'].show()
-                return
-            elif progress != 0:
-                item['gui']["btn"]['retry'].hide()
-                if config.get("download_copy_btn"):
-                    item['gui']['btn']['copy'].show()
-                item['gui']["btn"]['cancel'].show()
-                return
 
 
     def remove_completed_from_download_list(self):
@@ -555,34 +546,23 @@ class MainWindow(QMainWindow):
         with pending_lock:
             pending.clear()
         with download_queue_lock:
-            row_count = self.tbl_dl_progress.rowCount()
-            while row_count > 0:
-                for local_id in download_queue.keys():
-                    logger.debug(f'Trying to cancel : {local_id}')
-                    if download_queue[local_id]['item_status'] == "Waiting":
-                        download_queue[local_id]['item_status'] = "Cancelled"
-                        download_queue[local_id]['gui']['status_label'].setText(self.tr("Cancelled"))
-                        download_queue[local_id]['gui']['status_label'].setText(self.tr("Cancelled"))
-                        download_queue[local_id]['gui']['progress_bar'].setValue(0)
-                        download_queue[local_id]['gui']["btn"]['cancel'].hide()
-                        download_queue[local_id]['gui']["btn"]['retry'].show()
-                    row_count -= 1
-                self.update_table_visibility()
+            for local_id in list(download_queue.keys()):
+                logger.debug(f'Trying to cancel : {local_id}')
+                if download_queue[local_id]['item_status'] == "Waiting":
+                    download_queue[local_id]['item_status'] = "Cancelled"
+                    download_queue[local_id]['gui']['status_label'].setText(self.tr("Cancelled"))
+                    download_queue[local_id]['gui']['progress_bar'].setValue(0)
+            self.update_table_visibility()
 
 
     def retry_cancelled_and_failed_downloads(self):
         with download_queue_lock:
-            row_count = self.tbl_dl_progress.rowCount()
-            while row_count > 0:
-                for local_id in download_queue.keys():
-                    logger.debug(f'Retrying : {local_id}')
-                    if download_queue[local_id]['item_status'] in ("Failed", "Cancelled"):
-                        download_queue[local_id]['item_status'] = "Waiting"
-                        download_queue[local_id]['gui']['status_label'].setText(self.tr("Waiting"))
-                        download_queue[local_id]['gui']["btn"]['cancel'].show()
-                        download_queue[local_id]['gui']["btn"]['retry'].hide()
-                    row_count -= 1
-                self.update_table_visibility()
+            for local_id in list(download_queue.keys()):
+                logger.debug(f'Retrying : {local_id}')
+                if download_queue[local_id]['item_status'] in ("Failed", "Cancelled"):
+                    download_queue[local_id]['item_status'] = "Waiting"
+                    download_queue[local_id]['gui']['status_label'].setText(self.tr("Waiting"))
+            self.update_table_visibility()
 
 
     def user_table_remove_click(self):
@@ -874,52 +854,7 @@ class MainWindow(QMainWindow):
             self.search_term.setText('')
             return
 
-        def download_btn_clicked(item_name, item_url, item_service, item_type, item_id):
-            parsing[item_id] = {
-                'item_url': item_url,
-                'item_service': item_service,
-                'item_type': item_type,
-                'item_id': item_id
-            }
-            self.show_popup_dialog(self.tr("{0} is being parsed and will be added to the download queue shortly.").format(f"{item_type.title()}: {item_name}"), download=True)
-
-        def copy_btn_clicked(item_url):
-            QApplication.clipboard().setText(item_url)
-            self.show_popup_dialog(self.tr("The URL has been copied to the clipboard."), download=True)
-
         for result in results:
-            download_btn = QPushButton(self.tbl_search_results)
-            download_btn.setIcon(self.get_icon('download'))
-            download_btn.setMinimumHeight(30)
-            download_btn.setStyleSheet(config.get('theme'))
-            download_btn.clicked.connect(lambda x,
-                                    item_name=result['item_name'],
-                                    item_url=result['item_url'],
-                                    item_type=result['item_type'],
-                                    item_id=result['item_id'],
-                                    item_service=result['item_service']:
-                                    download_btn_clicked(item_name, item_url, item_service, item_type, item_id)
-                                    )
-
-            copy_btn = QPushButton(self.tbl_search_results)
-            copy_btn.setIcon(self.get_icon('link'))
-            copy_btn.setMinimumHeight(30)
-            copy_btn.setStyleSheet(config.get('theme'))
-            copy_btn.clicked.connect(lambda x, item_url=result['item_url']: copy_btn_clicked(item_url))
-
-            btn_layout = QHBoxLayout()
-            btn_layout.setContentsMargins(2, 2, 2, 2)
-            btn_layout.setSpacing(4)
-            btn_layout.addWidget(copy_btn)
-            btn_layout.addWidget(download_btn)
-
-            btn_widget = QWidget()
-            btn_widget.setStyleSheet("QWidget { background-color: transparent !important; }")
-            btn_widget.setLayout(btn_layout)
-
-            service = QTableWidgetItem(result['item_service'].replace('_', ' ').title())
-            service.setIcon(self.get_icon(result["item_service"]))
-
             rows = self.tbl_search_results.rowCount()
             self.tbl_search_results.insertRow(rows)
 
@@ -927,19 +862,33 @@ class MainWindow(QMainWindow):
                 self.tbl_search_results.setRowHeight(rows, config.get("thumbnail_size"))
                 item_label = LabelWithThumb(result['item_name'], result['item_thumbnail_url'])
             else:
-                item_label = QLabel(self.tbl_dl_progress)
+                item_label = QLabel(self.tbl_search_results)
                 item_label.setText(result['item_name'])
             item_label.setStyleSheet("background-color: transparent;")
 
+            actions_btn = QPushButton()
+            actions_btn.setText('...')
+            actions_btn.setMinimumHeight(30)
+            actions_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            actions_btn.clicked.connect(lambda checked, res=result, btn=actions_btn: 
+                self.show_search_item_context_menu(res, btn.mapToGlobal(btn.rect().bottomLeft()))
+            )
+
+            service = QTableWidgetItem(result['item_service'].replace('_', ' ').title())
+            service.setIcon(self.get_icon(result['item_service']))
+
+            by_item = QTableWidgetItem(str(result['item_by']))
+            by_item.setData(Qt.ItemDataRole.UserRole, result)
+
             self.tbl_search_results.setCellWidget(rows, 0, item_label)
-            self.tbl_search_results.setItem(rows, 1, QTableWidgetItem(str(result['item_by'])))
+            self.tbl_search_results.setItem(rows, 1, by_item)
             self.tbl_search_results.setItem(rows, 2, QTableWidgetItem(result['item_type'].replace('podcast_', '').title()))
             self.tbl_search_results.setItem(rows, 3, service)
-            self.tbl_search_results.setCellWidget(rows, 4, btn_widget)
+            self.tbl_search_results.setCellWidget(rows, 4, actions_btn)
             self.tbl_search_results.horizontalHeader().resizeSection(0, 450)
             self.tbl_search_results.horizontalHeader().resizeSection(4, 100)
 
-            self.search_term.setText('')
+        self.search_term.setText('')
 
 
     def update_table_visibility(self):
@@ -970,3 +919,151 @@ class MainWindow(QMainWindow):
             self.mirrorplayback.start()
         else:
             self.mirrorplayback.stop()
+
+
+    def on_download_table_context_menu(self, pos):
+        item = self.tbl_dl_progress.itemAt(pos)
+        if item is not None:
+            row = item.row()
+            local_id = self.tbl_dl_progress.item(row, 0).text()
+            self.show_download_item_context_menu(local_id, self.tbl_dl_progress.viewport().mapToGlobal(pos))
+
+
+    def show_download_item_context_menu(self, local_id, global_pos):
+        from PyQt6.QtWidgets import QMenu
+        with download_queue_lock:
+            item = download_queue.get(local_id)
+            if not item:
+                return
+            
+            menu = QMenu(self)
+            menu.setStyleSheet(config.get('theme'))
+            
+            status = item.get('item_status', 'Waiting')
+            progress = item['gui']['progress_bar'].value()
+            metadata = item.get('item_metadata', {})
+            
+            copy_action = menu.addAction(self.get_icon('link'), self.tr("Copy Link"))
+            
+            cancel_action = None
+            retry_action = None
+            open_action = None
+            locate_action = None
+            delete_action = None
+            
+            if status in ('Waiting', 'Downloading') and progress < 100:
+                cancel_action = menu.addAction(self.get_icon('stop'), self.tr("Cancel"))
+            
+            if status in ('Failed', 'Cancelled', 'Deleted'):
+                retry_action = menu.addAction(self.get_icon('retry'), self.tr("Retry"))
+                
+            if progress == 100 or status in ('Downloaded', 'Already Exists'):
+                if item.get('file_path'):
+                    open_action = menu.addAction(self.get_icon('file'), self.tr("Open File"))
+                    locate_action = menu.addAction(self.get_icon('folder'), self.tr("Locate File"))
+                    delete_action = menu.addAction(self.get_icon('trash'), self.tr("Delete File"))
+            
+            action = menu.exec(global_pos)
+            if not action:
+                return
+                
+            if action == copy_action:
+                QApplication.clipboard().setText(metadata.get('item_url', ''))
+                self.show_popup_dialog(self.tr("The URL has been copied to the clipboard."), download=True)
+            elif action == cancel_action:
+                self.cancel_download_item(local_id)
+            elif action == retry_action:
+                self.retry_download_item(local_id)
+            elif action == open_action:
+                self.open_download_file(local_id)
+            elif action == locate_action:
+                self.locate_download_file(local_id)
+            elif action == delete_action:
+                self.delete_download_file(local_id)
+
+
+    def cancel_download_item(self, local_id):
+        with download_queue_lock:
+            item = download_queue.get(local_id)
+            if item:
+                item['item_status'] = "Cancelled"
+                item['gui']['status_label'].setText(self.tr("Cancelled"))
+                item['gui']['progress_bar'].setValue(0)
+                self.update_table_visibility()
+
+
+    def retry_download_item(self, local_id):
+        with download_queue_lock:
+            item = download_queue.get(local_id)
+            if item:
+                item['item_status'] = "Waiting"
+                item['gui']['status_label'].setText(self.tr("Waiting"))
+                item['gui']['progress_bar'].setValue(0)
+                self.update_table_visibility()
+
+
+    def open_download_file(self, local_id):
+        with download_queue_lock:
+            item = download_queue.get(local_id)
+            if item and item.get('file_path'):
+                file = os.path.abspath(item['file_path'])
+                open_item(file)
+
+
+    def locate_download_file(self, local_id):
+        with download_queue_lock:
+            item = download_queue.get(local_id)
+            if item and item.get('file_path'):
+                file_dir = os.path.dirname(os.path.abspath(item['file_path']))
+                open_item(file_dir)
+
+
+    def delete_download_file(self, local_id):
+        with download_queue_lock:
+            item = download_queue.get(local_id)
+            if item and item.get('file_path'):
+                try:
+                    file = os.path.abspath(item['file_path'])
+                    if os.path.exists(file):
+                        os.remove(file)
+                    item['item_status'] = 'Deleted'
+                    item['gui']['status_label'].setText(self.tr("Deleted"))
+                    self.update_table_visibility()
+                except Exception as e:
+                    logger.error(f"Failed to delete file: {e}")
+
+
+    def on_search_table_context_menu(self, pos):
+        item = self.tbl_search_results.itemAt(pos)
+        if item is not None:
+            row = item.row()
+            col1_item = self.tbl_search_results.item(row, 1)
+            if col1_item is not None:
+                result = col1_item.data(Qt.ItemDataRole.UserRole)
+                if result:
+                    self.show_search_item_context_menu(result, self.tbl_search_results.viewport().mapToGlobal(pos))
+
+
+    def show_search_item_context_menu(self, result, global_pos):
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        menu.setStyleSheet(config.get('theme'))
+        
+        download_action = menu.addAction(self.get_icon('download'), self.tr("Download"))
+        copy_action = menu.addAction(self.get_icon('link'), self.tr("Copy Link"))
+        
+        action = menu.exec(global_pos)
+        if not action:
+            return
+            
+        if action == download_action:
+            parsing[result['item_id']] = {
+                'item_url': result['item_url'],
+                'item_service': result['item_service'],
+                'item_type': result['item_type'],
+                'item_id': result['item_id']
+            }
+            self.show_popup_dialog(self.tr("{0} is being parsed and will be added to the download queue shortly.").format(f"{result['item_type'].title()}: {result['item_name']}"), download=True)
+        elif action == copy_action:
+            QApplication.clipboard().setText(result['item_url'])
+            self.show_popup_dialog(self.tr("The URL has been copied to the clipboard."), download=True)

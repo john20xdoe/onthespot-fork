@@ -19,10 +19,23 @@ def load_config(self):
     self.version.setText(config.get("version"))
     self.statistics.setText(self.tr("{0} / {1}").format(config.get('total_downloaded_items'), format_bytes(config.get('total_downloaded_data'))))
 
-    # Dev Tools
-    self.settings_scrollarea_value.valueChanged.connect(self.settings_scroll_area.verticalScrollBar().setValue)
-    if not config.get('debug_mode'):
-        self.settings_scrollarea_value.hide()
+    # Sidebar Navigation Setup
+    self.settings_sidebar.clear()
+    self.settings_sidebar.addItems([
+        self.tr("Accounts"),
+        self.tr("General"),
+        self.tr("Audio Downloads"),
+        self.tr("Audio Metadata"),
+        self.tr("Video Downloads")
+    ])
+    self.settings_sidebar.item(0).setIcon(self.get_icon('active'))
+    self.settings_sidebar.item(1).setIcon(self.get_icon('onthespot'))
+    self.settings_sidebar.item(2).setIcon(self.get_icon('folder'))
+    self.settings_sidebar.item(3).setIcon(self.get_icon('file'))
+    self.settings_sidebar.item(4).setIcon(self.get_icon('play'))
+
+    self.settings_sidebar.currentRowChanged.connect(self.settings_stack.setCurrentIndex)
+    self.settings_sidebar.setCurrentRow(0)
 
     # Hide Popup Settings
     self.group_search_items.hide()
