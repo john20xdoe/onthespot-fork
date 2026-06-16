@@ -142,3 +142,4 @@ dmypy.json
 .vscode
 
 .DS_Store
+.build_state/
