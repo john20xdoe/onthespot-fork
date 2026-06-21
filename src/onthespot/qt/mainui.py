@@ -296,11 +296,12 @@ class MainWindow(QMainWindow):
         #self.tbl_sessions.setSortingEnabled(True)
         self.tbl_sessions.horizontalHeader().setSectionsMovable(True)
         self.tbl_sessions.horizontalHeader().setSectionsClickable(True)
-        self.tbl_sessions.horizontalHeader().resizeSection(0, 35)
+        self.tbl_sessions.horizontalHeader().resizeSection(0, 150)
         self.tbl_sessions.setIconSize(QSize(20, 20))
         self.tbl_sessions.verticalHeader().setDefaultSectionSize(36)
-        for i in range(1, 7):
+        for i in range(1, 6):
             self.tbl_sessions.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+        self.tbl_sessions.cellClicked.connect(self.on_session_cell_clicked)
         self.set_login_fields()
 
         # Search results table
@@ -377,6 +378,16 @@ class MainWindow(QMainWindow):
                 self.show_popup_dialog(self.tr("<p>An update is available at the link below,<p><a style='color: #6495ed;' href='https://github.com/justin025/onthespot/releases/latest'>https://github.com/justin025/onthespot/releases/latest</a>"))
 
 
+    def set_active_session(self, index):
+        if config.get('active_account_number') != index:
+            config.set('active_account_number', index)
+            config.save()
+            self.fill_account_table()
+
+    def on_session_cell_clicked(self, row, column):
+        if column == 0:
+            self.set_active_session(row)
+
     def fill_account_table(self):
         # Clear the table
         while self.tbl_sessions.rowCount() > 0:
@@ -386,17 +397,29 @@ class MainWindow(QMainWindow):
             sn = sn + 1
             rows = self.tbl_sessions.rowCount()
 
+            is_active = (sn == config.get("active_account_number") + 1)
+            account_status = account.get("status", "active")
+
+            # Reword Active/Error as Online/Error, and append Active if selected
+            if account_status == "active":
+                status_text = self.tr("Online")
+                if is_active:
+                    status_text += ", " + self.tr("Active")
+            else:
+                status_text = self.tr("Error")
+
             radiobutton = QRadioButton()
-            radiobutton.clicked.connect(lambda: config.set('active_account_number', self.tbl_sessions.currentRow()))
-            if sn == config.get("active_account_number") + 1:
+            radiobutton.setText(status_text)
+            radiobutton.setIcon(self.get_icon(account_status))
+            radiobutton.setIconSize(QSize(16, 16))
+            if is_active:
                 radiobutton.setChecked(True)
+
+            radiobutton.clicked.connect(lambda checked, r=rows: self.set_active_session(r))
 
             remove_btn = QPushButton(self.tbl_sessions)
             remove_btn.setIcon(self.get_icon('trash'))
             remove_btn.clicked.connect(self.user_table_remove_click)
-
-            status = QTableWidgetItem(str(account["status"]).title())
-            status.setIcon(self.get_icon(account["status"]))
 
             service = QTableWidgetItem(str(account["service"]).replace('_', ' ').title())
             service.setIcon(self.get_icon(account["service"]))
@@ -407,8 +430,7 @@ class MainWindow(QMainWindow):
             self.tbl_sessions.setItem(rows, 2, QTableWidgetItem(service))
             self.tbl_sessions.setItem(rows, 3, QTableWidgetItem(str(account["account_type"]).title()))
             self.tbl_sessions.setItem(rows, 4, QTableWidgetItem(account["bitrate"]))
-            self.tbl_sessions.setItem(rows, 5, QTableWidgetItem(status))
-            self.tbl_sessions.setCellWidget(rows, 6, remove_btn)
+            self.tbl_sessions.setCellWidget(rows, 5, remove_btn)
         logger.info("Accounts table was populated !")
 
 
@@ -576,15 +598,11 @@ class MainWindow(QMainWindow):
         config.set('accounts', accounts)
         config.save()
 
-        self.tbl_sessions.removeRow(index)
         if config.get('active_account_number') == index or config.get('active_account_number') >= len(account_pool):
             config.set('active_account_number', 0)
             config.save()
-            try:
-                self.tbl_sessions.cellWidget(0, 0).setChecked(True)
-            except AttributeError:
-                # Account Table is empty
-                pass
+
+        self.fill_account_table()
         self.show_popup_dialog(self.tr("Account was removed successfully."))
 
 

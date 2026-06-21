@@ -691,10 +691,10 @@
                  </attribute>
                  <column>
                   <property name="text">
-                   <string />
+                   <string>Status</string>
                   </property>
                   <property name="textAlignment">
-                   <set>AlignTrailing|AlignTop</set>
+                   <set>AlignLeading|AlignVCenter</set>
                   </property>
                  </column>
                  <column>
@@ -715,11 +715,6 @@
                  <column>
                   <property name="text">
                    <string>Max Resolution</string>
-                  </property>
-                 </column>
-                 <column>
-                  <property name="text">
-                   <string>Status</string>
                   </property>
                  </column>
                  <column>
