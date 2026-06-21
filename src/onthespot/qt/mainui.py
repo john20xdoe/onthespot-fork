@@ -296,7 +296,7 @@ class MainWindow(QMainWindow):
         #self.tbl_sessions.setSortingEnabled(True)
         self.tbl_sessions.horizontalHeader().setSectionsMovable(True)
         self.tbl_sessions.horizontalHeader().setSectionsClickable(True)
-        self.tbl_sessions.horizontalHeader().resizeSection(0, 16)
+        self.tbl_sessions.horizontalHeader().resizeSection(0, 35)
         self.tbl_sessions.setIconSize(QSize(20, 20))
         self.tbl_sessions.verticalHeader().setDefaultSectionSize(36)
         for i in range(1, 7):
