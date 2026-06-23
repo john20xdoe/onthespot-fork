@@ -30,6 +30,55 @@ from ..search import get_search_results
 logger = get_logger('gui.main_ui')
 
 
+class CategoryCellWidget(QWidget):
+    def __init__(self, category_type, category_name, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 1, 6, 1)
+        layout.setSpacing(6)
+        self.setLayout(layout)
+
+        # Create the pill label
+        self.pill = QLabel(category_type.upper(), self)
+        self.pill.setStyleSheet(self.get_pill_style(category_type))
+        self.pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Create the text label
+        self.name_label = QLabel(category_name, self)
+        self.name_label.setWordWrap(True)
+        self.name_label.setStyleSheet("""
+            QLabel {
+                background-color: transparent;
+                font-size: 11px;
+            }
+        """)
+
+        layout.addWidget(self.pill, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.name_label, 1, Qt.AlignmentFlag.AlignVCenter)
+        self.setStyleSheet("background-color: transparent;")
+
+    def get_pill_style(self, category_type):
+        colors = {
+            "album": ("#1db954", "white"),       # Spotify Green
+            "playlist": ("#2596be", "white"),    # Accent Blue
+            "show": ("#8a2be2", "white"),        # Purple
+            "track": ("#e06666", "white")        # Muted Red
+        }
+        bg, fg = colors.get(category_type.lower(), ("#808080", "white"))
+        
+        return f"""
+            QLabel {{
+                background-color: {bg};
+                color: {fg};
+                border-radius: 3px;
+                font-size: 8px;
+                font-weight: bold;
+                padding: 1px 4px;
+            }}
+        """
+
+
+
 class StatusCellWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -44,6 +93,8 @@ class StatusCellWidget(QWidget):
                 border-radius: 4px;
                 text-align: center;
                 background-color: rgba(128, 128, 128, 0.1);
+                font-size: 8px;
+                font-weight: bold;
             }
             QProgressBar::chunk {
                 background-color: #2596BE;
@@ -55,7 +106,13 @@ class StatusCellWidget(QWidget):
         self.pbar.setTextVisible(True)
 
         self.label = QLabel(self)
-        self.label.setStyleSheet("background-color: transparent;")
+        self.label.setStyleSheet("""
+            QLabel {
+                background-color: transparent;
+                font-size: 8px;
+                font-weight: bold;
+            }
+        """)
 
         layout.addWidget(self.pbar)
         layout.addWidget(self.label)
@@ -64,7 +121,8 @@ class StatusCellWidget(QWidget):
         self.label.hide()
 
     def update_status(self, status, progress, raw_status):
-        self.label.setText(status)
+        upper_status = status.upper()
+        self.label.setText(upper_status)
         self.pbar.setValue(progress)
 
         show_progress_bar_statuses = {
@@ -73,12 +131,13 @@ class StatusCellWidget(QWidget):
         }
 
         if raw_status in show_progress_bar_statuses:
-            self.pbar.setFormat(f"{status} %p%")
+            self.pbar.setFormat(f"{upper_status} %p%")
             self.pbar.show()
             self.label.hide()
         else:
             self.label.show()
             self.pbar.hide()
+
 
 
 class QueueWorker(QObject):
@@ -583,12 +642,13 @@ class MainWindow(QMainWindow):
 
     def add_item_to_download_list(self, item, item_metadata):
         status_widget = StatusCellWidget(self.tbl_dl_progress)
-        status_widget.pbar.setFormat(self.tr("Paused") + " %p%")
-        status_widget.pbar.setValue(0)
-
+        status_widget.update_status(self.tr("Paused"), 0, "Paused")
         pbar = status_widget.pbar
         status_label = status_widget.label
-        status_label.setText(self.tr("Paused"))
+        original_setText = status_label.setText
+        status_label.setText = lambda text: original_setText(text.upper())
+
+
 
         actions_btn = QPushButton()
         actions_btn.setIcon(self.get_icon('collapse_down'))
@@ -621,17 +681,22 @@ class MainWindow(QMainWindow):
 
         item_by = item_metadata.get('artists') if item_metadata.get('artists') else item_metadata.get('show_name')
 
+        category_type = item['parent_category']
         playlist_name = ''
         playlist_by = ''
-        if item['parent_category'] == 'playlist':
-            item_category = f'Playlist: {item["playlist_name"]}'
+        if category_type == 'playlist':
+            category_name = item.get('playlist_name', '')
             playlist_name = item.get('playlist_name')
             playlist_by = item.get('playlist_by')
-        elif item['parent_category'] in ('album', 'show'):
-            parent_name = item_metadata.get("album_name") if item_metadata.get("album_name") else item_metadata.get("show_name")
-            item_category = f'{item["parent_category"].title()}: {parent_name}'
+        elif category_type in ('album', 'show'):
+            category_name = item_metadata.get("album_name") if item_metadata.get("album_name") else item_metadata.get("show_name")
         else:
-            item_category = f'{item["parent_category"].title()}: {item_metadata["title"]}'
+            category_name = item_metadata.get("title", "")
+            
+        if not category_name:
+            category_name = "Unknown"
+
+        category_widget = CategoryCellWidget(category_type, category_name, self.tbl_dl_progress)
 
         item_service = item["item_service"]
         service_label = QTableWidgetItem(str(item_service).replace('_', ' ').title())
@@ -649,6 +714,7 @@ class MainWindow(QMainWindow):
             self.tbl_dl_progress.setRowHeight(rows, config.get("thumbnail_size"))
             item_label = LabelWithThumb(title, item_metadata.get('image_url'))
         else:
+            self.tbl_dl_progress.setRowHeight(rows, 38)
             item_label = QLabel(self.tbl_dl_progress)
             item_label.setText(title)
             item_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -659,7 +725,7 @@ class MainWindow(QMainWindow):
         self.tbl_dl_progress.setItem(rows, 0, QTableWidgetItem(str(item['local_id'])))
         self.tbl_dl_progress.setCellWidget(rows, 1, item_label)
         self.tbl_dl_progress.setItem(rows, 2, QTableWidgetItem(item_by))
-        self.tbl_dl_progress.setItem(rows, 3, QTableWidgetItem(item_category))
+        self.tbl_dl_progress.setCellWidget(rows, 3, category_widget)
         self.tbl_dl_progress.setItem(rows, 4, service_label)
         self.tbl_dl_progress.setCellWidget(rows, 5, status_widget)
         self.tbl_dl_progress.setCellWidget(rows, 6, btn_container)
@@ -1050,6 +1116,7 @@ class MainWindow(QMainWindow):
                 self.tbl_search_results.setRowHeight(rows, config.get("thumbnail_size"))
                 item_label = LabelWithThumb(result['item_name'], result['item_thumbnail_url'])
             else:
+                self.tbl_search_results.setRowHeight(rows, 38)
                 item_label = QLabel(self.tbl_search_results)
                 item_label.setText(result['item_name'])
             item_label.setStyleSheet("background-color: transparent;")
