@@ -470,11 +470,13 @@ class MainWindow(QMainWindow):
         self.tbl_search_results.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive) # Type
         self.tbl_search_results.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive) # Service
         self.tbl_search_results.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)       # Actions
-        self.tbl_search_results.setColumnWidth(1, 150)
+        self.tbl_search_results.setColumnWidth(1, 170)
         self.tbl_search_results.setColumnWidth(2, 100)
         self.tbl_search_results.setColumnWidth(3, 100)
-        self.tbl_search_results.setColumnWidth(4, 70)
-
+        self.tbl_search_results.setColumnWidth(4, 36)
+        if self.tbl_search_results.horizontalHeaderItem(4):
+            self.tbl_search_results.horizontalHeaderItem(4).setText("")
+ 
         # Download progress table
         #self.tbl_dl_progress.setSortingEnabled(True)
         self.tbl_dl_progress.setColumnCount(7)
@@ -485,7 +487,7 @@ class MainWindow(QMainWindow):
             self.tr("Type"),
             self.tr("Service"),
             self.tr("Status"),
-            self.tr("Actions")
+            ""
         ])
         self.tbl_dl_progress.horizontalHeader().setSectionsMovable(True)
         self.tbl_dl_progress.horizontalHeader().setSectionsClickable(True)
@@ -504,12 +506,12 @@ class MainWindow(QMainWindow):
         self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive) # Service
         self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive) # Status
         self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)       # Actions
-        self.tbl_dl_progress.setColumnWidth(2, 150)
-        self.tbl_dl_progress.setColumnWidth(3, 120)
-        self.tbl_dl_progress.setColumnWidth(4, 100)
-        self.tbl_dl_progress.setColumnWidth(5, 160)
-        self.tbl_dl_progress.setColumnWidth(6, 70)
-
+        self.tbl_dl_progress.setColumnWidth(2, 170)
+        self.tbl_dl_progress.setColumnWidth(3, 160)
+        self.tbl_dl_progress.setColumnWidth(4, 140)
+        self.tbl_dl_progress.setColumnWidth(5, 134)
+        self.tbl_dl_progress.setColumnWidth(6, 36)
+ 
         return True
 
 
