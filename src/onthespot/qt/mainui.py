@@ -473,7 +473,7 @@ class MainWindow(QMainWindow):
         self.tbl_search_results.setColumnWidth(1, 170)
         self.tbl_search_results.setColumnWidth(2, 100)
         self.tbl_search_results.setColumnWidth(3, 100)
-        self.tbl_search_results.setColumnWidth(4, 36)
+        self.tbl_search_results.setColumnWidth(4, 44)
         if self.tbl_search_results.horizontalHeaderItem(4):
             self.tbl_search_results.horizontalHeaderItem(4).setText("")
  
@@ -510,7 +510,7 @@ class MainWindow(QMainWindow):
         self.tbl_dl_progress.setColumnWidth(3, 160)
         self.tbl_dl_progress.setColumnWidth(4, 140)
         self.tbl_dl_progress.setColumnWidth(5, 134)
-        self.tbl_dl_progress.setColumnWidth(6, 36)
+        self.tbl_dl_progress.setColumnWidth(6, 44)
  
         return True
 
@@ -677,8 +677,9 @@ class MainWindow(QMainWindow):
         # Wrap actions button in a container to center it vertically and apply margins
         btn_container = QWidget()
         btn_layout = QHBoxLayout(btn_container)
-        btn_layout.addWidget(actions_btn)
-        btn_layout.setContentsMargins(6, 0, 6, 0)
+        btn_layout.addWidget(actions_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(0)
         btn_container.setStyleSheet("background-color: transparent;")
 
         item_by = item_metadata.get('artists') if item_metadata.get('artists') else item_metadata.get('show_name')
@@ -1147,8 +1148,9 @@ class MainWindow(QMainWindow):
             # Wrap actions button in a container to center it vertically and apply margins
             btn_container = QWidget()
             btn_layout = QHBoxLayout(btn_container)
-            btn_layout.addWidget(actions_btn)
-            btn_layout.setContentsMargins(6, 0, 6, 0)
+            btn_layout.addWidget(actions_btn, 0, Qt.AlignmentFlag.AlignCenter)
+            btn_layout.setContentsMargins(0, 0, 0, 0)
+            btn_layout.setSpacing(0)
             btn_container.setStyleSheet("background-color: transparent;")
 
             service = QTableWidgetItem(result['item_service'].replace('_', ' ').title())
