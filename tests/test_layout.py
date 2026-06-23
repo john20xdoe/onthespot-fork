@@ -41,10 +41,10 @@ class TestLayoutStandardization(unittest.TestCase):
         self.assertIsInstance(layout, QtWidgets.QFormLayout, "General parameters layout is not a QFormLayout")
 
     def test_dl_progress_table_columns(self):
-        # Verify that the download progress table column count is 8
+        # Verify that the download progress table column count is 7
         tbl_dl_progress = self.window.findChild(QtWidgets.QTableWidget, "tbl_dl_progress")
         self.assertIsNotNone(tbl_dl_progress, "tbl_dl_progress not found")
-        self.assertEqual(tbl_dl_progress.columnCount(), 8, f"Expected 8 columns, found {tbl_dl_progress.columnCount()}")
+        self.assertEqual(tbl_dl_progress.columnCount(), 7, f"Expected 7 columns, found {tbl_dl_progress.columnCount()}")
 
     def test_search_results_table_columns(self):
         # Verify that the search results table column count is 5
