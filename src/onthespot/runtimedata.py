@@ -5,7 +5,7 @@ import sys
 import tracemalloc
 from functools import wraps
 from logging.handlers import RotatingFileHandler
-from threading import Lock
+from threading import Lock, Event
 from .otsconfig import config
 
 log_formatter = logging.Formatter(
@@ -29,8 +29,8 @@ download_queue = {}
 parsing_lock = Lock()
 pending_lock = Lock()
 download_queue_lock = Lock()
-is_paused = False
-is_paused_lock = Lock()
+resume_event = Event()
+resume_event.set()
 
 init_tray = False
 
