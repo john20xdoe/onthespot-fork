@@ -7,7 +7,7 @@ from urllib3.exceptions import MaxRetryError, NewConnectionError
 from PyQt6 import uic, QtGui
 from PyQt6.QtCore import QThread, QDir, Qt, pyqtSignal, QObject, QTimer, QSize
 from PyQt6.QtGui import QIcon, QColor
-from PyQt6.QtWidgets import QApplication, QMainWindow, QHeaderView, QLabel, QPushButton, QProgressBar, QTableWidgetItem, QFileDialog, QRadioButton, QHBoxLayout, QWidget, QColorDialog
+from PyQt6.QtWidgets import QApplication, QMainWindow, QHeaderView, QLabel, QPushButton, QProgressBar, QTableWidgetItem, QFileDialog, QRadioButton, QHBoxLayout, QWidget, QColorDialog, QFrame
 from ..accounts import get_account_token, FillAccountPool
 from ..api.apple_music import apple_music_add_account, apple_music_get_track_metadata
 from ..api.bandcamp import bandcamp_add_account, bandcamp_get_track_metadata
@@ -121,6 +121,39 @@ class MainWindow(QMainWindow):
         self.mirrorplayback = MirrorSpotifyPlayback()
         if config.get('mirror_spotify_playback'):
             self.mirrorplayback.start()
+
+        # Create active service pill layout and widget
+        self.active_service_pill = QFrame()
+        self.active_service_pill.setObjectName("active_service_pill")
+        self.active_service_pill.setStyleSheet("""
+            QFrame#active_service_pill {
+                background-color: rgba(128, 128, 128, 0.15);
+                border: 1px solid rgba(128, 128, 128, 0.3);
+                border-radius: 12px;
+            }
+        """)
+        pill_layout = QHBoxLayout(self.active_service_pill)
+        pill_layout.setContentsMargins(8, 4, 8, 4)
+        pill_layout.setSpacing(6)
+
+        self.pill_icon = QLabel()
+        self.pill_icon.setFixedSize(16, 16)
+        self.pill_icon.setScaledContents(True)
+        self.pill_icon.setStyleSheet("background: transparent; border: none;")
+
+        self.pill_text = QLabel()
+        self.pill_text.setStyleSheet("font-weight: bold; font-size: 11px; background: transparent; border: none;")
+
+        pill_layout.addWidget(self.pill_icon)
+        pill_layout.addWidget(self.pill_text)
+
+        self.pill_container_layout = QHBoxLayout()
+        self.pill_container_layout.setContentsMargins(0, 0, 10, 0)
+        self.pill_container_layout.addStretch()
+        self.pill_container_layout.addWidget(self.active_service_pill)
+
+        self.verticalLayout_3.insertLayout(0, self.pill_container_layout)
+        self.active_service_pill.hide()
 
         # Bind button click
         self.bind_button_inputs()
@@ -432,6 +465,26 @@ class MainWindow(QMainWindow):
             self.tbl_sessions.setItem(rows, 4, QTableWidgetItem(account["bitrate"]))
             self.tbl_sessions.setCellWidget(rows, 5, remove_btn)
         logger.info("Accounts table was populated !")
+        self.update_active_service_pill()
+
+
+    def update_active_service_pill(self):
+        active_idx = config.get("active_account_number")
+        active_account = None
+        if 0 <= active_idx < len(account_pool):
+            active_account = account_pool[active_idx]
+
+        if active_account:
+            service_name = active_account.get("service", "")
+            if service_name:
+                display_name = str(service_name).replace('_', ' ').title()
+                icon = self.get_icon(service_name)
+                self.pill_icon.setPixmap(icon.pixmap(16, 16))
+                self.pill_text.setText(display_name)
+                self.active_service_pill.show()
+                return
+
+        self.active_service_pill.hide()
 
 
     def add_item_to_download_list(self, item, item_metadata):
