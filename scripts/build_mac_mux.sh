@@ -57,18 +57,20 @@ get_step_label() {
 }
 
 # ── Helpers ───────────────────────────────────────────────────
-step_done()   { [ -f "$STATE_DIR/$1.done" ]; }
-mark_done()   { touch "$STATE_DIR/$1.done"; }
-mark_failed() { touch "$STATE_DIR/$1.failed"; }
-clear_step()  { rm -f "$STATE_DIR/$1.done" "$STATE_DIR/$1.failed"; }
-
 step_status() {
   local step="$1"
-  if [ -f "$STATE_DIR/$step.done" ]; then   echo "done"
+  if [ "${DMG_MODE:-0}" -eq 1 ] && { [ "$step" = "env_setup" ] || [ "$step" = "pip_install" ] || [ "$step" = "ffmpeg" ]; }; then
+    echo "done"
+  elif [ -f "$STATE_DIR/$step.done" ]; then   echo "done"
   elif [ -f "$STATE_DIR/$step.failed" ]; then echo "failed"
   else                                         echo "pending"
   fi
 }
+
+step_done()   { [ "$(step_status "$1")" = "done" ]; }
+mark_done()   { touch "$STATE_DIR/$1.done"; }
+mark_failed() { touch "$STATE_DIR/$1.failed"; }
+clear_step()  { rm -f "$STATE_DIR/$1.done" "$STATE_DIR/$1.failed"; }
 
 # ── Dashboard ─────────────────────────────────────────────────
 print_dashboard() {
@@ -165,6 +167,35 @@ run_ffmpeg() {
     return 0
   fi
 
+  mkdir -p "$ROOT/build" "$ROOT/dist" "$ROOT/builder"
+
+  # Attempt to use local/brew ffmpeg first if not forced to build
+  local use_brew=1
+  if [ "${DMG_MODE:-0}" -ne 1 ] && [ "${BUILD_FFMPEG:-0}" -eq 1 ]; then
+    use_brew=0
+  fi
+
+  if [ "$use_brew" -eq 1 ]; then
+    local brew_ffmpeg=""
+    if command -v ffmpeg >/dev/null 2>&1; then
+      brew_ffmpeg="$(command -v ffmpeg)"
+    elif [ -f "/opt/homebrew/bin/ffmpeg" ]; then
+      brew_ffmpeg="/opt/homebrew/bin/ffmpeg"
+    elif [ -f "/usr/local/bin/ffmpeg" ]; then
+      brew_ffmpeg="/usr/local/bin/ffmpeg"
+    fi
+
+    if [ -n "$brew_ffmpeg" ]; then
+      echo "Found local/brew ffmpeg at $brew_ffmpeg, copying to dist/ffmpeg..." >> "$log"
+      # cp without options dereferences symlinks, copying the actual binary file
+      cp "$brew_ffmpeg" "$ROOT/dist/ffmpeg" >> "$log" 2>&1
+      chmod +x "$ROOT/dist/ffmpeg"
+      return 0
+    fi
+  else
+    echo "Forcing ffmpeg compile/download because --build-ffmpeg is active." >> "$log"
+  fi
+
   if uname -m | grep -q x86_64; then
     # Intel: download pre-built binary
     curl -L -o "$ROOT/build/ffmpeg.zip" \
@@ -191,6 +222,8 @@ run_ffmpeg() {
 run_pyinstaller() {
   local log="$LOG_DIR/pyinstaller.log"
   source "$ROOT/venv/bin/activate"
+
+  mkdir -p "$ROOT/build" "$ROOT/dist"
 
   local FFBIN=""
   if [ -f "$ROOT/dist/ffmpeg" ]; then
@@ -226,7 +259,16 @@ run_package_dmg() {
   chmod +x "$ROOT/dist/OnTheSpotRebuilt.app" >> "$log" 2>&1
   mkdir -p "$ROOT/dist/dmg"
   # Clean up any previous dmg staging
-  rm -rf "$ROOT/dist/dmg/OnTheSpotRebuilt.app" "$ROOT/dist/dmg/Applications"
+  chmod -R +w "$ROOT/dist/dmg/OnTheSpotRebuilt.app" 2>/dev/null || true
+  chflags -R nouchg "$ROOT/dist/dmg/OnTheSpotRebuilt.app" 2>/dev/null || true
+  
+  local trash_app="$ROOT/dist/dmg/OnTheSpotRebuilt.app.trash.$$."
+  if mv "$ROOT/dist/dmg/OnTheSpotRebuilt.app" "$trash_app" 2>/dev/null; then
+    rm -rf "$trash_app" 2>/dev/null || true
+  else
+    rm -rf "$ROOT/dist/dmg/OnTheSpotRebuilt.app" 2>/dev/null || true
+  fi
+  rm -rf "$ROOT/dist/dmg/Applications"
   mv "$ROOT/dist/OnTheSpotRebuilt.app" "$ROOT/dist/dmg/OnTheSpotRebuilt.app" || return 1
   ln -s /Applications "$ROOT/dist/dmg/Applications"
 
@@ -258,7 +300,7 @@ EOF
 
 run_cleanup() {
   local log="$LOG_DIR/cleanup.log"
-  rm -rf "$ROOT/__pycache__" "$ROOT/build" "$ROOT/builder" "$ROOT/venv" "$ROOT"/*.spec \
+  rm -rf "$ROOT/__pycache__" "$ROOT/build" "$ROOT/builder" "$ROOT"/*.spec \
     >> "$log" 2>&1
 }
 
@@ -322,106 +364,174 @@ run_step() {
 # ── Main ──────────────────────────────────────────────────────
 cd "$ROOT"
 
-case "${1:-}" in
-  --reset)
-    echo -e "${YELLOW}Resetting build state...${RESET}"
-    rm -rf "$STATE_DIR"
-    mkdir -p "$STATE_DIR"
-    echo -e "${GREEN}Done. All steps marked as pending.${RESET}"
-    exit 0
-    ;;
-  --reset-from)
-    step="${2:-}"
-    if [ -z "$step" ]; then
-      echo "Usage: $0 --reset-from <step_name>"
-      echo "Steps: ${STEPS[*]}"
-      exit 1
-    fi
-    found=0
-    for s in "${STEPS[@]}"; do
-      if [ "$found" = "1" ] || [ "$s" = "$step" ]; then
-        clear_step "$s"
-        found=1
-      fi
-    done
-    echo -e "${GREEN}Reset from step '$step' onwards.${RESET}"
-    exit 0
-    ;;
-  --status)
-    print_dashboard
-    exit 0
-    ;;
-  --step)
-    # Run a single named step, ignoring done state
-    step="${2:-}"
-    clear_step "$step"
-    run_step "$step"
-    print_dashboard
-    exit 0
-    ;;
-  --help|-h)
-    echo "Usage: $0 [option]"
-    echo ""
-    echo "Options:"
-    echo "  (none)              Run all pending steps"
-    echo "  --reset             Clear all step state (start fresh)"
-    echo "  --reset-from STEP   Re-run from STEP onwards"
-    echo "  --step STEP         Force-run a single step"
-    echo "  --status            Show step status and exit"
-    echo ""
-    echo "Steps: ${STEPS[*]}"
-    exit 0
-    ;;
-esac
+DMG_MODE=0
+BUILD_FFMPEG=0
 
-check_overwrite_dist() {
-  if [ -d "$ROOT/dist" ]; then
-    local has_non_ffmpeg=0
-    for item in "$ROOT/dist"/*; do
-      if [ -e "$item" ]; then
-        local name
-        name=$(basename "$item")
-        if [ "$name" != "ffmpeg" ] && [ "$name" != ".DS_Store" ]; then
-          has_non_ffmpeg=1
-          break
-        fi
-      fi
-    done
-    if [ "$has_non_ffmpeg" -eq 1 ]; then
-      # Make sure cursor is visible for prompt
-      printf "\033[?25h"
-      echo -e "${YELLOW}Warning: Build output directory 'dist/' is not empty and contains existing build outputs.${RESET}"
-      read -p "Overwrite and replace the built DMG/app? (y/n): " confirm
-      # Re-hide cursor
-      printf "\033[?25l"
-      if [[ "$confirm" =~ ^[Yy]$ ]]; then
-        echo -e "${YELLOW}Cleaning existing build outputs from dist/...${RESET}"
-        for item in "$ROOT/dist"/*; do
-          if [ -e "$item" ]; then
-            local name
-            name=$(basename "$item")
-            if [ "$name" != "ffmpeg" ] && [ "$name" != ".DS_Store" ]; then
-              rm -rf "$item"
-            fi
-          fi
-        done
-        # Reset entire build state to ensure clean build from scratch
-        echo -e "${YELLOW}Resetting build state...${RESET}"
-        rm -rf "$STATE_DIR"
-        mkdir -p "$STATE_DIR"
-      else
-        echo -e "${RED}Build aborted by user.${RESET}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dmg)
+      DMG_MODE=1
+      shift
+      ;;
+    --build-ffmpeg)
+      BUILD_FFMPEG=1
+      shift
+      ;;
+    --reset)
+      echo -e "${YELLOW}Resetting build state...${RESET}"
+      rm -rf "$STATE_DIR"
+      mkdir -p "$STATE_DIR"
+      echo -e "${GREEN}Done. All steps marked as pending.${RESET}"
+      exit 0
+      ;;
+    --reset-from)
+      step="${2:-}"
+      if [ -z "$step" ]; then
+        echo "Usage: $0 --reset-from <step_name>"
+        echo "Steps: ${STEPS[*]}"
         exit 1
       fi
+      found=0
+      for s in "${STEPS[@]}"; do
+        if [ "$found" = "1" ] || [ "$s" = "$step" ]; then
+          clear_step "$s"
+          found=1
+        fi
+      done
+      echo -e "${GREEN}Reset from step '$step' onwards.${RESET}"
+      exit 0
+      ;;
+    --status)
+      print_dashboard
+      exit 0
+      ;;
+    --step)
+      # Run a single named step, ignoring done state
+      step="${2:-}"
+      clear_step "$step"
+      run_step "$step"
+      print_dashboard
+      exit 0
+      ;;
+    --help|-h)
+      echo "Usage: $0 [option]"
+      echo ""
+      echo "Options:"
+      echo "  (none)              Run all pending steps"
+      echo "  --dmg               DMG build mode (skip to step 4, verify steps 1-3)"
+      echo "  --build-ffmpeg      Force compile/download ffmpeg instead of copying from brew (full/normal mode only)"
+      echo "  --reset             Clear all step state (start fresh)"
+      echo "  --reset-from STEP   Re-run from STEP onwards"
+      echo "  --step STEP         Force-run a single step"
+      echo "  --status            Show step status and exit"
+      echo ""
+      echo "Steps: ${STEPS[*]}"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+verify_dmg_mode_requirements() {
+  echo -e "\n${BOLD}${CYAN}Verifying DMG build mode prerequisites (Steps 1-3)...${RESET}"
+  local failed=0
+
+  # Step 1: Prepare environment & venv
+  if [ ! -d "$ROOT/venv" ] || [ ! -f "$ROOT/venv/bin/activate" ]; then
+    echo -e "  ${RED}✘ Step 1 Verification Failed: Virtual environment (venv) is missing at $ROOT/venv.${RESET}"
+    failed=1
+  else
+    echo -e "  ${GREEN}✔ Step 1 Verification Passed: Virtual environment exists.${RESET}"
+  fi
+
+  # Step 2: Install Python dependencies (specifically pyinstaller)
+  if [ ! -f "$ROOT/venv/bin/pyinstaller" ]; then
+    echo -e "  ${RED}✘ Step 2 Verification Failed: PyInstaller is missing in virtual environment at $ROOT/venv/bin/pyinstaller.${RESET}"
+    failed=1
+  else
+    echo -e "  ${GREEN}✔ Step 2 Verification Passed: PyInstaller dependency exists.${RESET}"
+  fi
+
+  # Step 3: Build / acquire ffmpeg binary
+  if [ ! -f "$ROOT/dist/ffmpeg" ]; then
+    echo -e "  ${RED}✘ Step 3 Verification Failed: ffmpeg binary is missing at $ROOT/dist/ffmpeg.${RESET}"
+    failed=1
+  else
+    echo -e "  ${GREEN}✔ Step 3 Verification Passed: ffmpeg binary exists.${RESET}"
+  fi
+
+  if [ $failed -eq 1 ]; then
+    echo -e "\n${YELLOW}Prerequisites for DMG build mode are missing.${RESET}"
+    echo -e "Please run the script without the ${BOLD}--dmg${RESET} flag first to initialize the environment and download dependencies:"
+    echo -e "  ${CYAN}./scripts/build_mac_mux.sh${RESET}\n"
+    exit 1
+  fi
+  echo -e "${GREEN}Verification successful! Skipping steps 1-3.${RESET}\n"
+}
+
+check_overwrite_dist() {
+  local has_rebuildable=0
+  if [ -d "$ROOT/dist" ]; then
+    for name in "OnTheSpotRebuilt.app" "OnTheSpotRebuilt" "OnTheSpotRebuilt.dmg" "dmg"; do
+      if [ -e "$ROOT/dist/$name" ]; then
+        has_rebuildable=1
+        break
+      fi
+    done
+  fi
+
+  if [ "$has_rebuildable" -eq 1 ]; then
+    # Make sure cursor is visible for prompt
+    printf "\033[?25h"
+    echo -e "${YELLOW}Warning: Build output directory 'dist/' contains existing build outputs that will be replaced.${RESET}"
+    read -p "Overwrite and replace the built DMG/app? (y/n): " confirm
+    # Re-hide cursor
+    printf "\033[?25l"
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+      echo -e "${YELLOW}Cleaning existing build outputs from dist/...${RESET}"
+      for name in "OnTheSpotRebuilt.app" "OnTheSpotRebuilt" "OnTheSpotRebuilt.dmg" "dmg"; do
+        local item="$ROOT/dist/$name"
+        if [ -e "$item" ]; then
+          chmod -R +w "$item" 2>/dev/null || true
+          chflags -R nouchg "$item" 2>/dev/null || true
+          
+          # Workaround for macOS Finder locking .DS_Store: rename before deleting
+          local trash_dir="${item}.trash.$$."
+          if mv "$item" "$trash_dir" 2>/dev/null; then
+            rm -rf "$trash_dir" 2>/dev/null || true
+          else
+            rm -rf "$item" 2>/dev/null || true
+          fi
+        fi
+      done
+      # Reset entire build state to ensure clean build from scratch
+      echo -e "${YELLOW}Resetting build state...${RESET}"
+      rm -rf "$STATE_DIR"
+      mkdir -p "$STATE_DIR"
+    else
+      echo -e "${RED}Build aborted by user.${RESET}"
+      exit 1
     fi
   fi
 }
 
+if [ "$DMG_MODE" -eq 1 ]; then
+  # Reset build state to ensure steps 4-6 are always executed and not skipped
+  rm -rf "$STATE_DIR"
+  mkdir -p "$STATE_DIR"
+  verify_dmg_mode_requirements
+fi
+
 # Default: run all pending steps
 check_overwrite_dist
 
-# Clear screen once at start of build
-clear
+# Clear screen once at start of build if output is a TTY
+if [ -t 1 ]; then
+  clear
+fi
 
 echo -e "\n${BOLD}Starting OnTheSpot macOS build...${RESET}\n"
 for step in "${STEPS[@]}"; do
