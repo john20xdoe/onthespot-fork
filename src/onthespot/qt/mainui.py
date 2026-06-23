@@ -30,6 +30,57 @@ from ..search import get_search_results
 logger = get_logger('gui.main_ui')
 
 
+class StatusCellWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 0, 6, 0)
+        self.setLayout(layout)
+
+        self.pbar = QProgressBar(self)
+        self.pbar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid rgba(128, 128, 128, 0.3);
+                border-radius: 4px;
+                text-align: center;
+                background-color: rgba(128, 128, 128, 0.1);
+            }
+            QProgressBar::chunk {
+                background-color: #2596BE;
+                border-radius: 3px;
+            }
+        """)
+        self.pbar.setValue(0)
+        self.pbar.setFixedHeight(18)
+        self.pbar.setTextVisible(True)
+
+        self.label = QLabel(self)
+        self.label.setStyleSheet("background-color: transparent;")
+
+        layout.addWidget(self.pbar)
+        layout.addWidget(self.label)
+        self.setStyleSheet("background-color: transparent;")
+
+        self.label.hide()
+
+    def update_status(self, status, progress, raw_status):
+        self.label.setText(status)
+        self.pbar.setValue(progress)
+
+        show_progress_bar_statuses = {
+            "Paused", "Waiting", "Downloading", "Downloading Video",
+            "Downloading Audio", "Downloading Chapters", "Downloading Subtitles"
+        }
+
+        if raw_status in show_progress_bar_statuses:
+            self.pbar.setFormat(f"{status} %p%")
+            self.pbar.show()
+            self.label.hide()
+        else:
+            self.label.show()
+            self.pbar.hide()
+
+
 class QueueWorker(QObject):
     add_item_to_download_list = pyqtSignal(dict, dict)
 
@@ -353,20 +404,52 @@ class MainWindow(QMainWindow):
         self.tbl_search_results.horizontalHeader().setSectionsMovable(True)
         self.tbl_search_results.horizontalHeader().setSectionsClickable(True)
         self.tbl_search_results.setIconSize(QSize(20, 20))
-        self.tbl_search_results.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for i in range(1,5):
-            self.tbl_search_results.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+        self.tbl_search_results.verticalHeader().setDefaultSectionSize(36)
+        self.tbl_search_results.horizontalHeader().setStretchLastSection(False)
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)     # Name
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive) # By
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive) # Type
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive) # Service
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)       # Actions
+        self.tbl_search_results.setColumnWidth(1, 150)
+        self.tbl_search_results.setColumnWidth(2, 100)
+        self.tbl_search_results.setColumnWidth(3, 100)
+        self.tbl_search_results.setColumnWidth(4, 70)
 
         # Download progress table
         #self.tbl_dl_progress.setSortingEnabled(True)
+        self.tbl_dl_progress.setColumnCount(7)
+        self.tbl_dl_progress.setHorizontalHeaderLabels([
+            self.tr("Item ID"),
+            self.tr("Title"),
+            self.tr("By"),
+            self.tr("Type"),
+            self.tr("Service"),
+            self.tr("Status"),
+            self.tr("Actions")
+        ])
         self.tbl_dl_progress.horizontalHeader().setSectionsMovable(True)
         self.tbl_dl_progress.horizontalHeader().setSectionsClickable(True)
         self.tbl_dl_progress.setIconSize(QSize(20, 20))
+        self.tbl_dl_progress.verticalHeader().setDefaultSectionSize(36)
+        self.tbl_dl_progress.horizontalHeader().setStretchLastSection(False)
         if not config.get("debug_mode"):
+            self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
             self.tbl_dl_progress.setColumnWidth(0, 0)
-        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for i in range(2,8):
-            self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+        else:
+            self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            self.tbl_dl_progress.setColumnWidth(0, 50)
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)     # Title
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive) # By
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive) # Type (Category)
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive) # Service
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive) # Status
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)       # Actions
+        self.tbl_dl_progress.setColumnWidth(2, 150)
+        self.tbl_dl_progress.setColumnWidth(3, 120)
+        self.tbl_dl_progress.setColumnWidth(4, 100)
+        self.tbl_dl_progress.setColumnWidth(5, 160)
+        self.tbl_dl_progress.setColumnWidth(6, 70)
 
         return True
 
@@ -499,27 +582,42 @@ class MainWindow(QMainWindow):
 
 
     def add_item_to_download_list(self, item, item_metadata):
-        # Items
-        pbar = QProgressBar()
-        pbar.setStyleSheet("""
-            QProgressBar {
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #2596BE;
-                color: white;
-            }
-        """)
-        pbar.setValue(0)
-        pbar.setMinimumHeight(30)
+        status_widget = StatusCellWidget(self.tbl_dl_progress)
+        status_widget.pbar.setFormat(self.tr("Paused") + " %p%")
+        status_widget.pbar.setValue(0)
+
+        pbar = status_widget.pbar
+        status_label = status_widget.label
+        status_label.setText(self.tr("Paused"))
 
         actions_btn = QPushButton()
-        actions_btn.setText('...')
-        actions_btn.setMinimumHeight(30)
+        actions_btn.setIcon(self.get_icon('collapse_down'))
+        actions_btn.setIconSize(QSize(14, 14))
+        actions_btn.setFixedSize(24, 24)
         actions_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        actions_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: rgba(128, 128, 128, 0.25);
+            }
+            QPushButton:pressed {
+                background-color: rgba(128, 128, 128, 0.4);
+            }
+        """)
         actions_btn.clicked.connect(lambda checked, lid=item['local_id'], btn=actions_btn: 
             self.show_download_item_context_menu(lid, btn.mapToGlobal(btn.rect().bottomLeft()))
         )
+
+        # Wrap actions button in a container to center it vertically and apply margins
+        btn_container = QWidget()
+        btn_layout = QHBoxLayout(btn_container)
+        btn_layout.addWidget(actions_btn)
+        btn_layout.setContentsMargins(6, 0, 6, 0)
+        btn_container.setStyleSheet("background-color: transparent;")
 
         item_by = item_metadata.get('artists') if item_metadata.get('artists') else item_metadata.get('show_name')
 
@@ -540,9 +638,6 @@ class MainWindow(QMainWindow):
         service_label.setIcon(self.get_icon(item_service))
         service_label.setBackground(QColor(0, 0, 0, 0))
 
-        status_label = QLabel(self.tbl_dl_progress)
-        status_label.setText(self.tr("Paused"))
-        status_label.setStyleSheet("background-color: transparent;")
 
         rows = self.tbl_dl_progress.rowCount()
         self.tbl_dl_progress.insertRow(rows)
@@ -566,9 +661,8 @@ class MainWindow(QMainWindow):
         self.tbl_dl_progress.setItem(rows, 2, QTableWidgetItem(item_by))
         self.tbl_dl_progress.setItem(rows, 3, QTableWidgetItem(item_category))
         self.tbl_dl_progress.setItem(rows, 4, service_label)
-        self.tbl_dl_progress.setCellWidget(rows, 5, status_label)
-        self.tbl_dl_progress.setCellWidget(rows, 6, pbar)
-        self.tbl_dl_progress.setCellWidget(rows, 7, actions_btn)
+        self.tbl_dl_progress.setCellWidget(rows, 5, status_widget)
+        self.tbl_dl_progress.setCellWidget(rows, 6, btn_container)
 
         # Hide if filter is applied
         self.update_table_visibility()
@@ -589,6 +683,7 @@ class MainWindow(QMainWindow):
                 'item_metadata': item_metadata,
                 "gui": {
                     "item_label": item_label,
+                    "status_widget": status_widget,
                     "status_label": status_label,
                     "progress_bar": pbar,
                     "actions_btn": actions_btn
@@ -600,8 +695,7 @@ class MainWindow(QMainWindow):
     def update_item_in_download_list(self, item, status, progress):
         self.statistics.setText(self.tr("{0} / {1}").format(config.get('total_downloaded_items'), format_bytes(config.get('total_downloaded_data'))))
         with download_queue_lock:
-            item['gui']['status_label'].setText(status)
-            item['gui']['progress_bar'].setValue(progress)
+            item['gui']['status_widget'].update_status(status, progress, item.get('item_status', ''))
             self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -639,8 +733,7 @@ class MainWindow(QMainWindow):
                 logger.debug(f'Trying to cancel : {local_id}')
                 if download_queue[local_id]['item_status'] in ("Waiting", "Paused"):
                     download_queue[local_id]['item_status'] = "Cancelled"
-                    download_queue[local_id]['gui']['status_label'].setText(self.tr("Cancelled"))
-                    download_queue[local_id]['gui']['progress_bar'].setValue(0)
+                    download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Cancelled"), 0, "Cancelled")
             self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -655,11 +748,11 @@ class MainWindow(QMainWindow):
                     if paused_flag:
                         download_queue[local_id]['item_status'] = "Paused"
                         download_queue[local_id]['available'] = False
-                        download_queue[local_id]['gui']['status_label'].setText(self.tr("Paused"))
+                        download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused")
                     else:
                         download_queue[local_id]['item_status'] = "Waiting"
                         download_queue[local_id]['available'] = True
-                        download_queue[local_id]['gui']['status_label'].setText(self.tr("Waiting"))
+                        download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting")
             self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -960,14 +1053,34 @@ class MainWindow(QMainWindow):
                 item_label = QLabel(self.tbl_search_results)
                 item_label.setText(result['item_name'])
             item_label.setStyleSheet("background-color: transparent;")
-
             actions_btn = QPushButton()
-            actions_btn.setText('...')
-            actions_btn.setMinimumHeight(30)
+            actions_btn.setIcon(self.get_icon('collapse_down'))
+            actions_btn.setIconSize(QSize(14, 14))
+            actions_btn.setFixedSize(24, 24)
             actions_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            actions_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    border: none;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: rgba(128, 128, 128, 0.25);
+                }
+                QPushButton:pressed {
+                    background-color: rgba(128, 128, 128, 0.4);
+                }
+            """)
             actions_btn.clicked.connect(lambda checked, res=result, btn=actions_btn: 
                 self.show_search_item_context_menu(res, btn.mapToGlobal(btn.rect().bottomLeft()))
             )
+
+            # Wrap actions button in a container to center it vertically and apply margins
+            btn_container = QWidget()
+            btn_layout = QHBoxLayout(btn_container)
+            btn_layout.addWidget(actions_btn)
+            btn_layout.setContentsMargins(6, 0, 6, 0)
+            btn_container.setStyleSheet("background-color: transparent;")
 
             service = QTableWidgetItem(result['item_service'].replace('_', ' ').title())
             service.setIcon(self.get_icon(result['item_service']))
@@ -979,9 +1092,7 @@ class MainWindow(QMainWindow):
             self.tbl_search_results.setItem(rows, 1, by_item)
             self.tbl_search_results.setItem(rows, 2, QTableWidgetItem(result['item_type'].replace('podcast_', '').title()))
             self.tbl_search_results.setItem(rows, 3, service)
-            self.tbl_search_results.setCellWidget(rows, 4, actions_btn)
-            self.tbl_search_results.horizontalHeader().resizeSection(0, 450)
-            self.tbl_search_results.horizontalHeader().resizeSection(4, 100)
+            self.tbl_search_results.setCellWidget(rows, 4, btn_container)
 
         self.search_term.setText('')
 
@@ -994,9 +1105,9 @@ class MainWindow(QMainWindow):
         show_completed = self.download_queue_show_completed.isChecked()
 
         for row in range(self.tbl_dl_progress.rowCount()):
-            label = self.tbl_dl_progress.cellWidget(row, 5)  # Check the Status column
-            if label:
-                status = label.text()
+            widget = self.tbl_dl_progress.cellWidget(row, 5)  # Check the Status column
+            if widget:
+                status = widget.label.text() if hasattr(widget, 'label') else widget.text()
                 # Determine visibility based on checkboxes
                 if ((status == self.tr("Waiting") or status == self.tr("Paused")) and not show_waiting) or \
                    (status == self.tr("Failed") and not show_failed) or \
@@ -1088,8 +1199,7 @@ class MainWindow(QMainWindow):
             item = download_queue.get(local_id)
             if item:
                 item['item_status'] = "Cancelled"
-                item['gui']['status_label'].setText(self.tr("Cancelled"))
-                item['gui']['progress_bar'].setValue(0)
+                item['gui']['status_widget'].update_status(self.tr("Cancelled"), 0, "Cancelled")
                 self.update_table_visibility()
 
 
@@ -1104,7 +1214,7 @@ class MainWindow(QMainWindow):
                     if item.get('item_status') == 'Paused':
                         item['item_status'] = 'Waiting'
                         item['available'] = True
-                        item['gui']['status_label'].setText(self.tr("Waiting"))
+                        item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting")
         elif button_text == self.tr("Pause Downloads"):
             runtimedata.resume_event.clear()
             with download_queue_lock:
@@ -1112,7 +1222,7 @@ class MainWindow(QMainWindow):
                     if item.get('item_status') == 'Waiting':
                         item['item_status'] = 'Paused'
                         item['available'] = False
-                        item['gui']['status_label'].setText(self.tr("Paused"))
+                        item['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused")
                  
         self.update_queue_button_state()
         self.update_table_visibility()
@@ -1126,7 +1236,7 @@ class MainWindow(QMainWindow):
             if item and item.get('item_status') == 'Paused':
                 item['item_status'] = 'Waiting'
                 item['available'] = True
-                item['gui']['status_label'].setText(self.tr("Waiting"))
+                item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting")
         self.update_queue_button_state()
         self.update_table_visibility()
 
@@ -1170,12 +1280,11 @@ class MainWindow(QMainWindow):
                 if paused_flag:
                     item['item_status'] = "Paused"
                     item['available'] = False
-                    item['gui']['status_label'].setText(self.tr("Paused"))
+                    item['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused")
                 else:
                     item['item_status'] = "Waiting"
                     item['available'] = True
-                    item['gui']['status_label'].setText(self.tr("Waiting"))
-                item['gui']['progress_bar'].setValue(0)
+                    item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting")
                 self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -1205,7 +1314,7 @@ class MainWindow(QMainWindow):
                     if os.path.exists(file):
                         os.remove(file)
                     item['item_status'] = 'Deleted'
-                    item['gui']['status_label'].setText(self.tr("Deleted"))
+                    item['gui']['status_widget'].update_status(self.tr("Deleted"), 0, "Deleted")
                     self.update_table_visibility()
                 except Exception as e:
                     logger.error(f"Failed to delete file: {e}")
