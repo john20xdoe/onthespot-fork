@@ -70,12 +70,19 @@ step_status() {
 step_done()   { [ "$(step_status "$1")" = "done" ]; }
 mark_done()   { touch "$STATE_DIR/$1.done"; }
 mark_failed() { touch "$STATE_DIR/$1.failed"; }
-clear_step()  { rm -f "$STATE_DIR/$1.done" "$STATE_DIR/$1.failed"; }
+clear_step()  { rm -f "$STATE_DIR/$1.done" "$STATE_DIR/$1.failed" "$STATE_DIR/$1.time"; }
+get_step_duration() {
+  local step="$1"
+  if [ -f "$STATE_DIR/$step.time" ]; then
+    cat "$STATE_DIR/$step.time"
+  fi
+}
 
 # ── Dashboard ─────────────────────────────────────────────────
 print_dashboard() {
   local active="${1:-}"
   local spinner_frame="${2:-⟳}"
+  local elapsed="${3:-}"
   
   # Go to home position instead of full clear to prevent flicker
   printf "\033[H"
@@ -121,7 +128,20 @@ print_dashboard() {
     else
       icon="○" ; color="${DIM}${WHITE}"
     fi
-    printf "  ${color}${BOLD}%s${RESET}  ${color}%-3s %s${RESET}\033[K\n" "$icon" "$i." "$label"
+
+    # Read duration
+    local duration_str=""
+    if [ "$s" = "$active" ] && [ -n "$elapsed" ]; then
+      duration_str=" (${elapsed}s)"
+    elif [ "$status" = "done" ]; then
+      local dur
+      dur=$(get_step_duration "$s")
+      if [ -n "$dur" ]; then
+        duration_str=" (${dur}s)"
+      fi
+    fi
+
+    printf "  ${color}${BOLD}%s${RESET}  ${color}%-3s %s%s${RESET}\033[K\n" "$icon" "$i." "$label" "$duration_str"
     if [ "$s" = "$active" ]; then
       echo -e "       ${DIM}└─ log: .build_logs/${s}.log${RESET}\033[K"
       local clean_line=""
@@ -307,12 +327,15 @@ run_cleanup() {
 # ── Dispatcher ────────────────────────────────────────────────
 run_step() {
   local step="$1"
-  print_dashboard "$step"
+  local start_time
+  start_time=$(date +%s)
+
+  print_dashboard "$step" "▘" "0"
   echo -e "  ${CYAN}Running: $(get_step_label "$step")${RESET}\033[K"
   echo -e "  ${DIM}Tail log: tail -f .build_logs/${step}.log${RESET}\033[K"
   echo -e "\033[K"
 
-  rm -f "$STATE_DIR/$step.failed"
+  rm -f "$STATE_DIR/$step.failed" "$STATE_DIR/$step.time"
   : > "$LOG_DIR/${step}.log"   # truncate log
 
   # Spin characters (highly visible rotating quadrant blocks)
@@ -331,7 +354,8 @@ run_step() {
   while kill -0 $pid 2>/dev/null; do
     local frame="${spin_chars[$idx]}"
     idx=$(( (idx + 1) % spin_count ))
-    print_dashboard "$step" "$frame"
+    local elapsed=$(( $(date +%s) - start_time ))
+    print_dashboard "$step" "$frame" "$elapsed"
     echo -e "  ${CYAN}Running: $(get_step_label "$step")${RESET}\033[K"
     echo -e "  ${DIM}Tail log: tail -f .build_logs/${step}.log${RESET}\033[K"
     echo -e "\033[K"
@@ -344,16 +368,19 @@ run_step() {
   local status=$?
   set -e
 
+  local duration=$(( $(date +%s) - start_time ))
+
   if [ $status -eq 0 ]; then
+    echo "$duration" > "$STATE_DIR/$step.time"
     mark_done "$step"
     print_dashboard
-    echo -e "  ${GREEN}✔ Done: $(get_step_label "$step")${RESET}\033[K"
+    echo -e "  ${GREEN}✔ Done: $(get_step_label "$step") (${duration}s)${RESET}\033[K"
     echo -e "\033[K"
     sleep 0.5
   else
     mark_failed "$step"
     print_dashboard
-    echo -e "\033[K\n  ${RED}✘ FAILED: $(get_step_label "$step")${RESET}\033[K"
+    echo -e "\033[K\n  ${RED}✘ FAILED: $(get_step_label "$step") (${duration}s)${RESET}\033[K"
     echo -e "  ${DIM}Last 5 lines of .build_logs/${step}.log:${RESET}\033[K"
     tail -n 5 "$LOG_DIR/${step}.log" | sed 's/^/    /' | sed 's/$/\x1b[K/'
     echo -e "\033[K\n  ${DIM}See full log: .build_logs/${step}.log${RESET}\033[K"
