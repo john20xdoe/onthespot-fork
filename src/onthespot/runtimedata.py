@@ -29,6 +29,8 @@ download_queue = {}
 parsing_lock = Lock()
 pending_lock = Lock()
 download_queue_lock = Lock()
+is_paused = False
+is_paused_lock = Lock()
 
 init_tray = False
 

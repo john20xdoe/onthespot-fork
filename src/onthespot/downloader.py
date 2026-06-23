@@ -21,7 +21,7 @@ from .api.youtube_music import youtube_music_get_track_metadata
 from .api.crunchyroll import crunchyroll_get_episode_metadata, crunchyroll_get_decryption_key, crunchyroll_get_mpd_info, crunchyroll_close_stream
 from .api.generic import generic_get_track_metadata
 from .otsconfig import config
-from .runtimedata import get_logger, download_queue, download_queue_lock, account_pool, temp_download_path
+from .runtimedata import get_logger, download_queue, download_queue_lock, account_pool, temp_download_path, is_paused, is_paused_lock
 from .utils import format_item_path, convert_audio_format, embed_metadata, set_music_thumbnail, fix_mp3_metadata, add_to_m3u_file, strip_metadata, convert_video_format
 
 logger = get_logger("downloader")
@@ -49,10 +49,12 @@ class RetryWorker(QObject):
                         logger.debug(f'Retrying : {local_id}')
                         if download_queue[local_id]['item_status'] == "Failed":
                             download_queue[local_id]['item_status'] = "Waiting"
+                            download_queue[local_id]['available'] = True
                             if self.gui:
                                 download_queue[local_id]['gui']['status_label'].setText(self.tr("Waiting"))
-                                download_queue[local_id]['gui']["btn"]['cancel'].show()
-                                download_queue[local_id]['gui']["btn"]['retry'].hide()
+                                if "btn" in download_queue[local_id]['gui']:
+                                    download_queue[local_id]['gui']["btn"]['cancel'].show()
+                                    download_queue[local_id]['gui']["btn"]['retry'].hide()
             if config.get('retry_worker_delay') > 0:
                 time.sleep(config.get('retry_worker_delay') * 60)
             continue
@@ -104,6 +106,11 @@ class DownloadWorker(QObject):
         while self.is_running:
             try:
                 try:
+                    with is_paused_lock:
+                        paused = is_paused
+                    if paused:
+                        time.sleep(0.5)
+                        continue
                     if download_queue:
                         with download_queue_lock:
                             # Mark item as unavailable for other download workers

@@ -21,7 +21,7 @@ from ..api.generic import generic_add_account, generic_get_track_metadata, gener
 from ..api.crunchyroll import crunchyroll_add_account, crunchyroll_get_episode_metadata
 from ..downloader import DownloadWorker, RetryWorker
 from ..otsconfig import config, cache_dir
-from ..runtimedata import account_pool, download_queue, download_queue_lock, get_init_tray, parsing, parsing_lock, pending, pending_lock, get_logger, temp_download_path
+from ..runtimedata import account_pool, download_queue, download_queue_lock, get_init_tray, parsing, parsing_lock, pending, pending_lock, get_logger, temp_download_path, is_paused, is_paused_lock
 from .settings import load_config, save_config
 from .thumb_listitem import LabelWithThumb
 from ..utils import is_latest_release, open_item, format_bytes
@@ -155,6 +155,17 @@ class MainWindow(QMainWindow):
         self.verticalLayout_3.insertLayout(0, self.pill_container_layout)
         self.active_service_pill.hide()
 
+        # Create "Begin Download" button layout and button
+        self.begin_download_layout = QHBoxLayout()
+        self.begin_download_layout.addStretch()
+        self.btn_begin_download = QPushButton()
+        self.btn_begin_download.setObjectName("btn_begin_download")
+        self.btn_begin_download.setText(self.tr("Begin Download"))
+        self.btn_begin_download.clicked.connect(self.begin_download)
+        self.begin_download_layout.addWidget(self.btn_begin_download)
+
+        self.verticalLayout.insertLayout(0, self.begin_download_layout)
+
         # Bind button click
         self.bind_button_inputs()
 
@@ -167,7 +178,7 @@ class MainWindow(QMainWindow):
         
         self.tbl_search_results.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tbl_search_results.customContextMenuRequested.connect(self.on_search_table_context_menu)
-
+        self.update_queue_button_state()
         logger.info("Main window init completed !")
 
 
@@ -530,7 +541,7 @@ class MainWindow(QMainWindow):
         service_label.setBackground(QColor(0, 0, 0, 0))
 
         status_label = QLabel(self.tbl_dl_progress)
-        status_label.setText(self.tr("Waiting"))
+        status_label.setText(self.tr("Paused"))
         status_label.setStyleSheet("background-color: transparent;")
 
         rows = self.tbl_dl_progress.rowCount()
@@ -565,11 +576,11 @@ class MainWindow(QMainWindow):
         with download_queue_lock:
             download_queue[item['local_id']] = {
                 'local_id': item['local_id'],
-                'available': True,
+                'available': False,
                 "item_service": item["item_service"],
                 "item_type": item["item_type"],
                 'item_id': item['item_id'],
-                'item_status': 'Waiting',
+                'item_status': 'Paused',
                 "file_path": None,
                 'parent_category': item['parent_category'],
                 'playlist_name': playlist_name,
@@ -583,6 +594,7 @@ class MainWindow(QMainWindow):
                     "actions_btn": actions_btn
                 }
             }
+        self.update_queue_button_state()
 
 
     def update_item_in_download_list(self, item, status, progress):
@@ -591,6 +603,7 @@ class MainWindow(QMainWindow):
             item['gui']['status_label'].setText(status)
             item['gui']['progress_bar'].setValue(progress)
             self.update_table_visibility()
+            self.update_queue_button_state()
 
 
     def remove_completed_from_download_list(self):
@@ -613,6 +626,7 @@ class MainWindow(QMainWindow):
                         check_row += 1
                 else:
                     check_row += 1
+        self.update_queue_button_state()
 
 
     def cancel_all_downloads(self):
@@ -623,11 +637,12 @@ class MainWindow(QMainWindow):
         with download_queue_lock:
             for local_id in list(download_queue.keys()):
                 logger.debug(f'Trying to cancel : {local_id}')
-                if download_queue[local_id]['item_status'] == "Waiting":
+                if download_queue[local_id]['item_status'] in ("Waiting", "Paused"):
                     download_queue[local_id]['item_status'] = "Cancelled"
                     download_queue[local_id]['gui']['status_label'].setText(self.tr("Cancelled"))
                     download_queue[local_id]['gui']['progress_bar'].setValue(0)
             self.update_table_visibility()
+        self.update_queue_button_state()
 
 
     def retry_cancelled_and_failed_downloads(self):
@@ -636,8 +651,10 @@ class MainWindow(QMainWindow):
                 logger.debug(f'Retrying : {local_id}')
                 if download_queue[local_id]['item_status'] in ("Failed", "Cancelled"):
                     download_queue[local_id]['item_status'] = "Waiting"
+                    download_queue[local_id]['available'] = True
                     download_queue[local_id]['gui']['status_label'].setText(self.tr("Waiting"))
             self.update_table_visibility()
+        self.update_queue_button_state()
 
 
     def user_table_remove_click(self):
@@ -974,7 +991,7 @@ class MainWindow(QMainWindow):
             if label:
                 status = label.text()
                 # Determine visibility based on checkboxes
-                if (status == self.tr("Waiting") and not show_waiting) or \
+                if ((status == self.tr("Waiting") or status == self.tr("Paused")) and not show_waiting) or \
                    (status == self.tr("Failed") and not show_failed) or \
                    (status == self.tr("Unavailable") and not show_unavailable) or \
                    (status == self.tr("Cancelled") and not show_cancelled) or \
@@ -1021,9 +1038,13 @@ class MainWindow(QMainWindow):
             open_action = None
             locate_action = None
             delete_action = None
+            download_item_action = None
             
-            if status in ('Waiting', 'Downloading') and progress < 100:
+            if status in ('Waiting', 'Downloading', 'Paused') and progress < 100:
                 cancel_action = menu.addAction(self.get_icon('stop'), self.tr("Cancel"))
+            
+            if status == 'Paused':
+                download_item_action = menu.addAction(self.get_icon('download'), self.tr("Download"))
             
             if status in ('Failed', 'Cancelled', 'Deleted'):
                 retry_action = menu.addAction(self.get_icon('retry'), self.tr("Retry"))
@@ -1041,6 +1062,8 @@ class MainWindow(QMainWindow):
             if action == copy_action:
                 QApplication.clipboard().setText(metadata.get('item_url', ''))
                 self.show_popup_dialog(self.tr("The URL has been copied to the clipboard."), download=True)
+            elif action == download_item_action:
+                self.start_paused_download(local_id)
             elif action == cancel_action:
                 self.cancel_download_item(local_id)
             elif action == retry_action:
@@ -1063,11 +1086,81 @@ class MainWindow(QMainWindow):
                 self.update_table_visibility()
 
 
+    def begin_download(self):
+        from .. import runtimedata
+        button_text = self.btn_begin_download.text()
+        
+        if button_text == self.tr("Begin Download"):
+            with runtimedata.is_paused_lock:
+                runtimedata.is_paused = False
+            with download_queue_lock:
+                for local_id, item in download_queue.items():
+                    if item.get('item_status') == 'Paused':
+                        item['item_status'] = 'Waiting'
+                        item['available'] = True
+                        item['gui']['status_label'].setText(self.tr("Waiting"))
+        elif button_text == self.tr("Pause Downloads"):
+            with runtimedata.is_paused_lock:
+                runtimedata.is_paused = True
+        elif button_text == self.tr("Resume Downloads"):
+            with runtimedata.is_paused_lock:
+                runtimedata.is_paused = False
+                
+        self.update_queue_button_state()
+        self.update_table_visibility()
+
+
+    def start_paused_download(self, local_id):
+        from .. import runtimedata
+        with runtimedata.is_paused_lock:
+            runtimedata.is_paused = False
+        with download_queue_lock:
+            item = download_queue.get(local_id)
+            if item and item.get('item_status') == 'Paused':
+                item['item_status'] = 'Waiting'
+                item['available'] = True
+                item['gui']['status_label'].setText(self.tr("Waiting"))
+        self.update_queue_button_state()
+        self.update_table_visibility()
+
+
+    def update_queue_button_state(self):
+        from .. import runtimedata
+        
+        has_active = False
+        has_paused = False
+        
+        with download_queue_lock:
+            for item in download_queue.values():
+                status = item.get('item_status')
+                if status in ('Waiting', 'Downloading'):
+                    has_active = True
+                elif status == 'Paused':
+                    has_paused = True
+                    
+        with runtimedata.is_paused_lock:
+            paused_flag = runtimedata.is_paused
+
+        if paused_flag and has_active:
+            self.btn_begin_download.setText(self.tr("Resume Downloads"))
+            self.btn_begin_download.setEnabled(True)
+        elif not paused_flag and has_active:
+            self.btn_begin_download.setText(self.tr("Pause Downloads"))
+            self.btn_begin_download.setEnabled(True)
+        elif has_paused:
+            self.btn_begin_download.setText(self.tr("Begin Download"))
+            self.btn_begin_download.setEnabled(True)
+        else:
+            self.btn_begin_download.setText(self.tr("Begin Download"))
+            self.btn_begin_download.setEnabled(False)
+
+
     def retry_download_item(self, local_id):
         with download_queue_lock:
             item = download_queue.get(local_id)
             if item:
                 item['item_status'] = "Waiting"
+                item['available'] = True
                 item['gui']['status_label'].setText(self.tr("Waiting"))
                 item['gui']['progress_bar'].setValue(0)
                 self.update_table_visibility()
