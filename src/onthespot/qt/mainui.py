@@ -31,7 +31,7 @@ logger = get_logger('gui.main_ui')
 
 
 class CategoryCellWidget(QWidget):
-    def __init__(self, category_type, category_name, parent=None):
+    def __init__(self, category_type, category_name="", parent=None):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 1, 6, 1)
@@ -42,27 +42,35 @@ class CategoryCellWidget(QWidget):
         self.pill = QLabel(category_type.upper(), self)
         self.pill.setStyleSheet(self.get_pill_style(category_type))
         self.pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # Create the text label
-        self.name_label = QLabel(category_name, self)
-        self.name_label.setWordWrap(True)
-        self.name_label.setStyleSheet("""
-            QLabel {
-                background-color: transparent;
-                font-size: 11px;
-            }
-        """)
-
         layout.addWidget(self.pill, 0, Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self.name_label, 1, Qt.AlignmentFlag.AlignVCenter)
+
+        if category_name:
+            # Create the text label
+            self.name_label = QLabel(category_name, self)
+            self.name_label.setWordWrap(True)
+            self.name_label.setStyleSheet("""
+                QLabel {
+                    background-color: transparent;
+                    font-size: 11px;
+                }
+            """)
+            layout.addWidget(self.name_label, 1, Qt.AlignmentFlag.AlignVCenter)
+        else:
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self.setStyleSheet("background-color: transparent;")
 
     def get_pill_style(self, category_type):
         colors = {
             "album": ("#1db954", "white"),       # Spotify Green
+            "audiobook": ("#27ae60", "white"),    # Darker Green
             "playlist": ("#2596be", "white"),    # Accent Blue
             "show": ("#8a2be2", "white"),        # Purple
-            "track": ("#e06666", "white")        # Muted Red
+            "podcast": ("#8a2be2", "white"),     # Purple
+            "track": ("#e06666", "white"),       # Muted Red
+            "episode": ("#e67e22", "white"),     # Orange
+            "artist": ("#e74c3c", "white")       # Red/Coral
         }
         bg, fg = colors.get(category_type.lower(), ("#808080", "white"))
         
@@ -468,14 +476,12 @@ class MainWindow(QMainWindow):
         self.tbl_search_results.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)     # Name
         self.tbl_search_results.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive) # By
         self.tbl_search_results.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive) # Type
-        self.tbl_search_results.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive) # Service
-        self.tbl_search_results.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)       # Actions
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)       # Actions
         self.tbl_search_results.setColumnWidth(1, 170)
-        self.tbl_search_results.setColumnWidth(2, 100)
-        self.tbl_search_results.setColumnWidth(3, 100)
-        self.tbl_search_results.setColumnWidth(4, 44)
-        if self.tbl_search_results.horizontalHeaderItem(4):
-            self.tbl_search_results.horizontalHeaderItem(4).setText("")
+        self.tbl_search_results.setColumnWidth(2, 80)
+        self.tbl_search_results.setColumnWidth(3, 44)
+        if self.tbl_search_results.horizontalHeaderItem(3):
+            self.tbl_search_results.horizontalHeaderItem(3).setText("")
  
         # Download progress table
         #self.tbl_dl_progress.setSortingEnabled(True)
@@ -1153,17 +1159,16 @@ class MainWindow(QMainWindow):
             btn_layout.setSpacing(0)
             btn_container.setStyleSheet("background-color: transparent;")
 
-            service = QTableWidgetItem(result['item_service'].replace('_', ' ').title())
-            service.setIcon(self.get_icon(result['item_service']))
-
             by_item = QTableWidgetItem(str(result['item_by']))
             by_item.setData(Qt.ItemDataRole.UserRole, result)
 
+            item_type = result['item_type'].replace('podcast_', '')
+            type_widget = CategoryCellWidget(item_type, "", self.tbl_search_results)
+
             self.tbl_search_results.setCellWidget(rows, 0, item_label)
             self.tbl_search_results.setItem(rows, 1, by_item)
-            self.tbl_search_results.setItem(rows, 2, QTableWidgetItem(result['item_type'].replace('podcast_', '').title()))
-            self.tbl_search_results.setItem(rows, 3, service)
-            self.tbl_search_results.setCellWidget(rows, 4, btn_container)
+            self.tbl_search_results.setCellWidget(rows, 2, type_widget)
+            self.tbl_search_results.setCellWidget(rows, 3, btn_container)
 
         self.search_term.setText('')
 
