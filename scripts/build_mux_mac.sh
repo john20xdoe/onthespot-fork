@@ -4,16 +4,16 @@
 #  Breaks the build into discrete, resumable steps.
 #  State is tracked via build/state/<step>.done marker files.
 #  Usage:
-#    ./scripts/build_mac_mux.sh           # run all pending steps
-#    ./scripts/build_mac_mux.sh --reset   # clear state & restart
-#    ./scripts/build_mac_mux.sh --status  # show step status only
+#    ./scripts/build_mux_mac.sh           # run all pending steps
+#    ./scripts/build_mux_mac.sh --reset   # clear state & restart
+#    ./scripts/build_mux_mac.sh --status  # show step status only
 # =============================================================
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-STATE_DIR="$ROOT/build/state"
-LOG_DIR="$ROOT/build/logs"
+STATE_DIR="$ROOT/build/state/mac"
+LOG_DIR="$ROOT/build/logs/mac"
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 
 # Hide cursor and restore on exit
@@ -493,7 +493,7 @@ verify_dmg_mode_requirements() {
   if [ $failed -eq 1 ]; then
     echo -e "\n${YELLOW}Prerequisites for DMG build mode are missing.${RESET}"
     echo -e "Please run the script without the ${BOLD}--dmg${RESET} flag first to initialize the environment and download dependencies:"
-    echo -e "  ${CYAN}./scripts/build_mac_mux.sh${RESET}\n"
+    echo -e "  ${CYAN}./scripts/build_mux_mac.sh${RESET}\n"
     exit 1
   fi
   echo -e "${GREEN}Verification successful! Skipping steps 1-3.${RESET}\n"
