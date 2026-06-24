@@ -331,8 +331,8 @@ def remove_account(uuid):
 @app.route('/api/clear_cache', methods=['DELETE'])
 @login_required
 def clear_cache():
-    shutil.rmtree(os.path.join(cache_dir(), "reqcache"))
-    shutil.rmtree(os.path.join(cache_dir(), "logs"))
+    shutil.rmtree(os.path.join(cache_dir(), "reqcache"), ignore_errors=True)
+    shutil.rmtree(os.path.join(cache_dir(), "logs"), ignore_errors=True)
     return jsonify(success=True)
 
 

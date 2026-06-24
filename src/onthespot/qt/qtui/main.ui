@@ -1689,21 +1689,21 @@
               </property>
               <property name="text">
                <string>&lt;h1 align="center"&gt;Disclaimer&lt;/h1&gt;
-&lt;br&gt;
-&lt;p align="center" style="font-size:14pt;"&gt;
-    OnTheSpot is strictly intended for educational, private and fair use only in compliance with the
-    &lt;a href="https://www.copyright.gov/dmca/" style="text-decoration: underline; color:#64B5F6;"&gt;
-        Digital Millennium Copyright Act (DMCA), Section 1201
-    &lt;/a&gt;
-    . It is not affiliated with or endorsed by any music streaming services or platforms.
-    The contributors / developers of OnTheSpot are not responsible for  any misuse of the
-    program or source code.  Users are solely responsible for ensuring that their use of
-    OnTheSpot complies with all relevant/applicable laws in their country.The creators
-    and contributors of OnTheSpot assume no liability for any misuse of legal terms
-    associated with the application or its source code. Licensed under GPL-2.0.
-    &lt;br&gt;
-    &lt;br&gt;
-&lt;/p&gt;</string>
+ &lt;br&gt;
+ &lt;p align="center" style="font-size:14pt;"&gt;
+     OnTheSpot is strictly intended for educational, private and fair use only in compliance with the
+     &lt;a href="https://www.copyright.gov/dmca/" style="text-decoration: underline; color:#64B5F6;"&gt;
+         Digital Millennium Copyright Act (DMCA), Section 1201
+     &lt;/a&gt;
+     . It is not affiliated with or endorsed by any music streaming services or platforms.
+     The contributors / developers of OnTheSpot are not responsible for any misuse of the
+     program or source code. Users are solely responsible for ensuring that their use of
+     OnTheSpot complies with all relevant/applicable laws in their country. The creators
+     and contributors of OnTheSpot assume no liability for any misuse of legal terms
+     associated with the application or its source code. Licensed under GPL-2.0.
+     &lt;br&gt;
+     &lt;br&gt;
+ &lt;/p&gt;</string>
               </property>
               <property name="scaledContents">
                <bool>false</bool>

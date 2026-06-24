@@ -503,17 +503,10 @@ class MainWindow(QMainWindow):
 
 
 
-        self.clear_cache.clicked.connect(lambda:
-            shutil.rmtree(os.path.join(cache_dir(), "reqcache")) and
-            shutil.rmtree(os.path.join(cache_dir(), "logs")) and
-            self.show_popup_dialog(self.tr("Cache Cleared"))
-            )
-        self.export_logs.clicked.connect(lambda: shutil.copy(
-            os.path.join(cache_dir(), "logs", config.session_uuid, "onthespot.log"),
-            os.path.join(os.path.expanduser("~"), "Downloads", "onthespot.log")) and
-            self.show_popup_dialog(self.tr("Logs exported to '{0}'").format(os.path.join(os.path.expanduser("~"), "Downloads", "onthespot.log") or True))
-            )
-        self.donate.clicked.connect(lambda: open_item('https://justin025.github.io/about.html'))
+        self.clear_cache.clicked.connect(self.clear_cache_clicked)
+        self.export_logs.clicked.connect(self.export_logs_clicked)
+        self.donate.setText(self.tr("GitHub"))
+        self.donate.clicked.connect(lambda: open_item('https://github.com/john20xdoe/onthespot-fork'))
 
 
     def set_table_props(self):
@@ -607,6 +600,25 @@ class MainWindow(QMainWindow):
         if new_path:
             temp_download_path.append(new_path)
 
+    def clear_cache_clicked(self):
+        shutil.rmtree(os.path.join(cache_dir(), "reqcache"), ignore_errors=True)
+        shutil.rmtree(os.path.join(cache_dir(), "logs"), ignore_errors=True)
+        self.show_popup_dialog(self.tr("Cache Cleared"))
+
+    def export_logs_clicked(self):
+        src = os.path.join(cache_dir(), "logs", config.session_uuid, "onthespot.log")
+        dst = os.path.join(os.path.expanduser("~"), "Downloads", "onthespot.log")
+        if os.path.exists(src):
+            try:
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy(src, dst)
+                self.show_popup_dialog(self.tr("Logs exported to '{0}'").format(dst))
+            except Exception as e:
+                logger.error(f"Failed to export logs: {e}")
+                self.show_popup_dialog(self.tr("Failed to export logs: {0}").format(e))
+        else:
+            self.show_popup_dialog(self.tr("No log file found to export."))
+
     def show_popup_dialog(self, txt, btn_hide=False, download=False):
         if download and config.get('disable_download_popups'):
             return
@@ -632,7 +644,7 @@ class MainWindow(QMainWindow):
         # Update Checker
         if config.get("check_for_updates"):
             if not is_latest_release():
-                self.show_popup_dialog(self.tr("<p>An update is available at the link below,<p><a style='color: #6495ed;' href='https://github.com/justin025/onthespot/releases/latest'>https://github.com/justin025/onthespot/releases/latest</a>"))
+                self.show_popup_dialog(self.tr("<p>An update is available at the link below,<p><a style='color: #6495ed;' href='https://github.com/john20xdoe/onthespot-fork/releases/latest'>https://github.com/john20xdoe/onthespot-fork/releases/latest</a>"))
 
 
     def set_active_session(self, index):
