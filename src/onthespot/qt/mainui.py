@@ -6,8 +6,8 @@ import traceback
 from urllib3.exceptions import MaxRetryError, NewConnectionError
 from PyQt6 import uic, QtGui
 from PyQt6.QtCore import QThread, QDir, Qt, pyqtSignal, QObject, QTimer, QSize
-from PyQt6.QtGui import QIcon, QColor
-from PyQt6.QtWidgets import QApplication, QMainWindow, QHeaderView, QLabel, QPushButton, QProgressBar, QTableWidgetItem, QFileDialog, QRadioButton, QHBoxLayout, QWidget, QColorDialog, QFrame
+from PyQt6.QtGui import QIcon, QColor, QPainter, QPen
+from PyQt6.QtWidgets import QApplication, QMainWindow, QHeaderView, QLabel, QPushButton, QProgressBar, QTableWidgetItem, QFileDialog, QRadioButton, QHBoxLayout, QWidget, QColorDialog, QFrame, QSizePolicy
 from ..accounts import get_account_token, FillAccountPool
 from ..api.apple_music import apple_music_add_account, apple_music_get_track_metadata
 from ..api.bandcamp import bandcamp_add_account, bandcamp_get_track_metadata
@@ -28,6 +28,65 @@ from ..utils import is_latest_release, open_item, format_bytes
 from ..search import get_search_results
 
 logger = get_logger('gui.main_ui')
+
+
+class SpinnerWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.angle = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.rotate)
+        self.setFixedSize(20, 20)
+        
+    def start(self):
+        self.timer.start(50)  # Rotate every 50ms
+        self.show()
+        
+    def stop(self):
+        self.timer.stop()
+        self.hide()
+        
+    def rotate(self):
+        self.angle = (self.angle + 30) % 360
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Center coordinates
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.rotate(self.angle)
+        
+        pen = QPen()
+        pen.setWidth(2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        
+        # Draw 8 ticks with fading opacity
+        for i in range(8):
+            color = QColor("#2596be")  # Accent Color
+            color.setAlpha(int(255 * (i / 8.0)))
+            pen.setColor(color)
+            painter.setPen(pen)
+            painter.drawLine(0, -6, 0, -3)
+            painter.rotate(45)
+
+
+class SearchWorker(QThread):
+    finished = pyqtSignal(object)
+    
+    def __init__(self, search_term, content_types):
+        super().__init__()
+        self.search_term = search_term
+        self.content_types = content_types
+        
+    def run(self):
+        try:
+            results = get_search_results(self.search_term, self.content_types)
+            self.finished.emit(results)
+        except Exception as e:
+            logger.error(f"Search failed: {e}")
+            self.finished.emit(False)
 
 
 class CategoryCellWidget(QWidget):
@@ -250,6 +309,7 @@ class MainWindow(QMainWindow):
                 border-radius: 12px;
             }
         """)
+        self.active_service_pill.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         pill_layout = QHBoxLayout(self.active_service_pill)
         pill_layout.setContentsMargins(8, 4, 8, 4)
         pill_layout.setSpacing(6)
@@ -272,6 +332,11 @@ class MainWindow(QMainWindow):
 
         self.verticalLayout_3.insertLayout(0, self.pill_container_layout)
         self.active_service_pill.hide()
+
+        # Create search spinner
+        self.search_spinner = SpinnerWidget(self)
+        self.horizontalLayout_5.addWidget(self.search_spinner)
+        self.search_spinner.hide()
 
         # Create "Begin Download" button layout and button
         self.begin_download_layout = QHBoxLayout()
@@ -418,8 +483,6 @@ class MainWindow(QMainWindow):
         self.search_term.returnPressed.connect(self.fill_search_table)
         self.btn_progress_clear_complete.clicked.connect(self.remove_completed_from_download_list)
 
-        self.btn_search_filter_toggle.clicked.connect(lambda toggle: self.group_search_items.show() if self.group_search_items.isHidden() else self.group_search_items.hide())
-        self.btn_search_filter_toggle.clicked.connect(lambda switch: self.btn_search_filter_toggle.setIcon(self.get_icon('collapse_down')) if self.group_search_items.isHidden() else self.btn_search_filter_toggle.setIcon(self.get_icon('collapse_up')))
         self.btn_download_filter_toggle.clicked.connect(lambda toggle: self.group_download_items.show() if self.group_download_items.isHidden() else self.group_download_items.hide())
         self.btn_download_filter_toggle.clicked.connect(lambda switch: self.btn_download_filter_toggle.setIcon(self.get_icon('collapse_up')) if self.group_download_items.isHidden() else self.btn_download_filter_toggle.setIcon(self.get_icon('collapse_down')))
 
@@ -471,7 +534,7 @@ class MainWindow(QMainWindow):
         self.tbl_search_results.horizontalHeader().setSectionsMovable(True)
         self.tbl_search_results.horizontalHeader().setSectionsClickable(True)
         self.tbl_search_results.setIconSize(QSize(20, 20))
-        self.tbl_search_results.verticalHeader().setDefaultSectionSize(36)
+        self.tbl_search_results.verticalHeader().setDefaultSectionSize(30)
         self.tbl_search_results.horizontalHeader().setStretchLastSection(False)
         self.tbl_search_results.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)     # Name
         self.tbl_search_results.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive) # By
@@ -1080,9 +1143,16 @@ class MainWindow(QMainWindow):
 
 
     def fill_search_table(self):
+        if hasattr(self, 'search_worker') and self.search_worker.isRunning():
+            return
+
+        search_term = self.search_term.text().strip()
+        if not search_term:
+            return
+
         while self.tbl_search_results.rowCount() > 0:
             self.tbl_search_results.removeRow(0)
-        search_term = self.search_term.text().strip()
+
         content_types = []
         if self.enable_search_tracks.isChecked():
             content_types.append('track')
@@ -1099,7 +1169,20 @@ class MainWindow(QMainWindow):
         if self.enable_search_audiobooks.isChecked():
             content_types.append('audiobook')
 
-        results = get_search_results(search_term, content_types)
+        self.search_term.setDisabled(True)
+        self.btn_search.setDisabled(True)
+        self.search_spinner.start()
+
+        self.search_worker = SearchWorker(search_term, content_types)
+        self.search_worker.finished.connect(self.on_search_finished)
+        self.search_worker.start()
+
+    def on_search_finished(self, results):
+        self.search_spinner.stop()
+        self.search_term.setDisabled(False)
+        self.btn_search.setDisabled(False)
+        self.search_term.setFocus()
+
         if results is None:
             self.show_popup_dialog(self.tr("You need to login to at least one account to use this feature."))
             self.search_term.setText('')
@@ -1125,7 +1208,7 @@ class MainWindow(QMainWindow):
                 self.tbl_search_results.setRowHeight(rows, config.get("thumbnail_size"))
                 item_label = LabelWithThumb(result['item_name'], result['item_thumbnail_url'])
             else:
-                self.tbl_search_results.setRowHeight(rows, 38)
+                self.tbl_search_results.setRowHeight(rows, 30)
                 item_label = QLabel(self.tbl_search_results)
                 item_label.setText(result['item_name'])
             item_label.setStyleSheet("background-color: transparent;")

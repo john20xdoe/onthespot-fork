@@ -47,124 +47,100 @@
         <string>Search</string>
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayout_3">
-        <item>
-         <widget class="QGroupBox" name="group_search">
-          <property name="maximumSize">
-           <size>
-            <width>16777215</width>
-            <height>100</height>
-           </size>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QGroupBox {
+        <property name="leftMargin">
+         <number>9</number>
+        </property>
+        <property name="topMargin">
+         <number>4</number>
+        </property>
+        <property name="rightMargin">
+         <number>9</number>
+        </property>
+        <property name="bottomMargin">
+         <number>4</number>
+        </property>
+        <property name="spacing">
+         <number>4</number>
+        </property>
+         <item>
+          <widget class="QGroupBox" name="group_search">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">QGroupBox {
 	border:0;
+	margin: 0px;
+	padding: 0px;
 }</string>
-          </property>
-          <property name="title">
-           <string />
-          </property>
-          <property name="flat">
-           <bool>true</bool>
-          </property>
-          <layout class="QHBoxLayout" name="horizontalLayout_5">
-           <item>
-            <widget class="QGroupBox" name="groupBox_7">
-             <property name="maximumSize">
-              <size>
-               <width>16777215</width>
-               <height>100</height>
-              </size>
-             </property>
-             <property name="autoFillBackground">
-              <bool>false</bool>
-             </property>
-             <property name="styleSheet">
-              <string notr="true" />
-             </property>
-             <property name="title">
-              <string />
-             </property>
-             <property name="flat">
-              <bool>true</bool>
-             </property>
-             <layout class="QHBoxLayout" name="horizontalLayout_3">
-              <property name="spacing">
-               <number>0</number>
+           </property>
+           <property name="title">
+            <string />
+           </property>
+           <property name="flat">
+            <bool>true</bool>
+           </property>
+           <layout class="QHBoxLayout" name="horizontalLayout_5">
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="label_2">
+              <property name="text">
+               <string />
               </property>
-              <property name="leftMargin">
-               <number>6</number>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="search_term">
+              <property name="text">
+               <string />
               </property>
-              <property name="topMargin">
-               <number>0</number>
+              <property name="dragEnabled">
+               <bool>true</bool>
               </property>
-              <property name="bottomMargin">
-               <number>0</number>
+              <property name="placeholderText">
+               <string>Search term or url</string>
               </property>
-              <item>
-               <widget class="QLabel" name="label_2">
-                <property name="text">
-                 <string />
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLineEdit" name="search_term">
-                <property name="text">
-                 <string />
-                </property>
-                <property name="dragEnabled">
-                 <bool>true</bool>
-                </property>
-                <property name="placeholderText">
-                 <string>Search term or url</string>
-                </property>
-                <property name="clearButtonEnabled">
-                 <bool>true</bool>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QPushButton" name="btn_search">
-                <property name="text">
-                 <string />
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QPushButton" name="btn_search_filter_toggle">
-                <property name="text">
-                 <string />
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </widget>
-           </item>
-          </layout>
-         </widget>
-        </item>
-        <item>
-         <widget class="QGroupBox" name="group_search_items">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>0</height>
-           </size>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QGroupBox {
-	border:0;
-}</string>
-          </property>
-          <property name="title">
-           <string />
-          </property>
-          <property name="flat">
-           <bool>true</bool>
-          </property>
-          <layout class="QVBoxLayout" name="verticalLayout_37">
+              <property name="clearButtonEnabled">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_search">
+              <property name="text">
+               <string />
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
            <item>
             <widget class="QGroupBox" name="search_categories">
+             <property name="styleSheet">
+              <string notr="true">QGroupBox {
+	border: 0;
+	margin: 0px;
+	padding: 0px;
+}</string>
+             </property>
              <property name="minimumSize">
               <size>
                <width>0</width>
@@ -276,6 +252,13 @@
            </item>
            <item>
             <widget class="QGroupBox" name="group_login_form_6">
+             <property name="styleSheet">
+              <string notr="true">QGroupBox {
+	border: 0;
+	margin: 0px;
+	padding: 0px;
+}</string>
+             </property>
              <property name="minimumSize">
               <size>
                <width>0</width>
@@ -309,59 +292,14 @@
              </layout>
             </widget>
            </item>
-           <item>
-            <spacer name="horizontalSpacer_7">
-             <property name="orientation">
-              <enum>Qt::Horizontal</enum>
-             </property>
-             <property name="sizeHint" stdset="0">
-              <size>
-               <width>0</width>
-               <height>0</height>
-              </size>
-             </property>
-            </spacer>
-           </item>
-          </layout>
-         </widget>
-        </item>
-        <item>
-         <widget class="QGroupBox" name="group_temp_dl_root">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>0</height>
-           </size>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QGroupBox {
-	border:0;
-}</string>
-          </property>
-          <property name="title">
-           <string />
-          </property>
-          <property name="flat">
-           <bool>true</bool>
-          </property>
-          <layout class="QHBoxLayout" name="horizontalLayout_28">
-           <property name="leftMargin">
-            <number>0</number>
-           </property>
-           <property name="topMargin">
-            <number>0</number>
-           </property>
-           <property name="rightMargin">
-            <number>0</number>
-           </property>
-           <property name="bottomMargin">
-            <number>0</number>
-           </property>
-          </layout>
-         </widget>
-        </item>
         <item>
          <widget class="QGroupBox" name="group_search_results">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="title">
            <string>Search Results</string>
           </property>
