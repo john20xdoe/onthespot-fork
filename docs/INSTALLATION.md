@@ -50,7 +50,7 @@ If you prefer to build OnTheSpot yourself, follow these steps.
 
 3. **Install and Launch OnTheSpot**
 
-   After building the application will be located in the `dist` folder. Be sure to follow installation steps based on your operating system.
+   After building the application will be located in the `build/dist` folder. Be sure to follow installation steps based on your operating system.
 
 
 ## 3. Install Via Pip or Run The App From Source
