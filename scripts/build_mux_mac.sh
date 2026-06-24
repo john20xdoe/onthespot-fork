@@ -95,7 +95,7 @@ print_dashboard() {
   local completed_steps=0
   for s in "${STEPS[@]}"; do
     if [ "$(step_status "$s")" = "done" ]; then
-      ((completed_steps++))
+      completed_steps=$(( completed_steps + 1 ))
     fi
   done
 
@@ -158,7 +158,7 @@ print_dashboard() {
         printf "          ${DIM}▶  waiting...${RESET}\033[K\n"
       fi
     fi
-    (( i++ ))
+    i=$(( i + 1 ))
   done
   echo -e "\033[K"
   # Clear any remaining lines below the dashboard

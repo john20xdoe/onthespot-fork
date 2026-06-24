@@ -1,0 +1,11 @@
+services:
+  builder:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.linux
+    tty: true
+    stdin_open: true
+    volumes:
+      - .:/app
+    command: ./scripts/build_mux_linux.sh --all
