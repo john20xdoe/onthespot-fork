@@ -1301,56 +1301,57 @@ class MainWindow(QMainWindow):
             if not item:
                 return
             
-            menu = QMenu(self)
-            menu.setStyleSheet(config.get('theme'))
-            
             status = item.get('item_status', 'Waiting')
             progress = item['gui']['progress_bar'].value()
             metadata = item.get('item_metadata', {})
+            file_path = item.get('file_path')
             
-            copy_action = menu.addAction(self.get_icon('link'), self.tr("Copy Link"))
+        menu = QMenu(self)
+        menu.setStyleSheet(config.get('theme'))
+        
+        copy_action = menu.addAction(self.get_icon('link'), self.tr("Copy Link"))
+        
+        cancel_action = None
+        retry_action = None
+        open_action = None
+        locate_action = None
+        delete_action = None
+        download_item_action = None
+        
+        if status in ('Waiting', 'Downloading', 'Paused') and progress < 100:
+            cancel_action = menu.addAction(self.get_icon('stop'), self.tr("Cancel"))
+        
+        if status == 'Paused':
+            download_item_action = menu.addAction(self.get_icon('download'), self.tr("Download"))
+        
+        if status in ('Failed', 'Cancelled', 'Deleted'):
+            retry_action = menu.addAction(self.get_icon('retry'), self.tr("Retry"))
             
-            cancel_action = None
-            retry_action = None
-            open_action = None
-            locate_action = None
-            delete_action = None
-            download_item_action = None
+        if progress == 100 or status in ('Downloaded', 'Already Exists'):
+            if file_path:
+                open_action = menu.addAction(self.get_icon('file'), self.tr("Open File"))
+                locate_action = menu.addAction(self.get_icon('folder'), self.tr("Locate File"))
+                delete_action = menu.addAction(self.get_icon('trash'), self.tr("Delete File"))
+        
+        action = menu.exec(global_pos)
+        if not action:
+            return
             
-            if status in ('Waiting', 'Downloading', 'Paused') and progress < 100:
-                cancel_action = menu.addAction(self.get_icon('stop'), self.tr("Cancel"))
-            
-            if status == 'Paused':
-                download_item_action = menu.addAction(self.get_icon('download'), self.tr("Download"))
-            
-            if status in ('Failed', 'Cancelled', 'Deleted'):
-                retry_action = menu.addAction(self.get_icon('retry'), self.tr("Retry"))
-                
-            if progress == 100 or status in ('Downloaded', 'Already Exists'):
-                if item.get('file_path'):
-                    open_action = menu.addAction(self.get_icon('file'), self.tr("Open File"))
-                    locate_action = menu.addAction(self.get_icon('folder'), self.tr("Locate File"))
-                    delete_action = menu.addAction(self.get_icon('trash'), self.tr("Delete File"))
-            
-            action = menu.exec(global_pos)
-            if not action:
-                return
-                
-            if action == copy_action:
-                QApplication.clipboard().setText(metadata.get('item_url', ''))
-                self.show_popup_dialog(self.tr("The URL has been copied to the clipboard."), download=True)
-            elif action == download_item_action:
-                self.start_paused_download(local_id)
-            elif action == cancel_action:
-                self.cancel_download_item(local_id)
-            elif action == retry_action:
-                self.retry_download_item(local_id)
-            elif action == open_action:
-                self.open_download_file(local_id)
-            elif action == locate_action:
-                self.locate_download_file(local_id)
-            elif action == delete_action:
-                self.delete_download_file(local_id)
+        if action == copy_action:
+            QApplication.clipboard().setText(metadata.get('item_url', ''))
+            self.show_popup_dialog(self.tr("The URL has been copied to the clipboard."), download=True)
+        elif action == download_item_action:
+            self.start_paused_download(local_id)
+        elif action == cancel_action:
+            self.cancel_download_item(local_id)
+        elif action == retry_action:
+            self.retry_download_item(local_id)
+        elif action == open_action:
+            self.open_download_file(local_id)
+        elif action == locate_action:
+            self.locate_download_file(local_id)
+        elif action == delete_action:
+            self.delete_download_file(local_id)
 
 
     def cancel_download_item(self, local_id):
