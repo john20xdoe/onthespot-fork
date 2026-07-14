@@ -114,9 +114,10 @@ def sanitize_data(value):
 
 
 def translate(string):
+    from urllib.parse import quote
     try:
         response = requests.get(
-            f"https://translate.googleapis.com/translate_a/single?dj=1&dt=t&dt=sp&dt=ld&dt=bd&client=dict-chrome-ex&sl=auto&tl={config.get('language')}&q={string}"
+            f"https://translate.googleapis.com/translate_a/single?dj=1&dt=t&dt=sp&dt=ld&dt=bd&client=dict-chrome-ex&sl=auto&tl={config.get('language')}&q={quote(string)}"
         )
         return response.json()["sentences"][0]["trans"]
     except (requests.exceptions.RequestException, KeyError, IndexError):

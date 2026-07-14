@@ -50,14 +50,16 @@ def bandcamp_add_account():
 
 
 def bandcamp_get_search_results(_, search_term, content_types):
+    from urllib.parse import quote
     search_results = []
     urls = []
+    encoded_term = quote(search_term)
     if 'track' in content_types:
-        urls.append(f'https://bandcamp.com/search?q={search_term}&item_type=t')
+        urls.append(f'https://bandcamp.com/search?q={encoded_term}&item_type=t')
     if 'album' in content_types:
-        urls.append(f'https://bandcamp.com/search?q={search_term}&item_type=a')
+        urls.append(f'https://bandcamp.com/search?q={encoded_term}&item_type=a')
     if 'artist' in content_types:
-        urls.append(f'https://bandcamp.com/search?q={search_term}&item_type=b')
+        urls.append(f'https://bandcamp.com/search?q={encoded_term}&item_type=b')
 
     result_pattern = r'<li class="searchresult data-search"[^>]*>.*?</li>'
     artwork_pattern = r'<a class="artcont" href=".*?">\s*<div class="art">\s*<img src="(?P<artwork_url>.*?)"\s*.*?>'
