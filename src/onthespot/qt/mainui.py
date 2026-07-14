@@ -151,6 +151,7 @@ class StatusCellWidget(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 0, 6, 0)
+        layout.setSpacing(4)
         self.setLayout(layout)
 
         self.pbar = QProgressBar(self)
@@ -181,13 +182,30 @@ class StatusCellWidget(QWidget):
             }
         """)
 
+        self.lyric_label = QLabel(self)
+        self.lyric_label.setFixedSize(14, 14)
+        self.lyric_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lyric_label.setText("L")
+        self.lyric_label.setToolTip(self.tr("Lyrics included"))
+        self.lyric_label.setStyleSheet("""
+            QLabel {
+                background-color: #2596BE;
+                color: white;
+                border-radius: 3px;
+                font-size: 9px;
+                font-weight: bold;
+            }
+        """)
+
         layout.addWidget(self.pbar)
-        layout.addWidget(self.label)
+        layout.addWidget(self.label, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.lyric_label, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         self.setStyleSheet("background-color: transparent;")
 
         self.label.hide()
+        self.lyric_label.hide()
 
-    def update_status(self, status, progress, raw_status):
+    def update_status(self, status, progress, raw_status, item=None):
         upper_status = status.upper()
         self.label.setText(upper_status)
         self.pbar.setValue(progress)
@@ -201,9 +219,27 @@ class StatusCellWidget(QWidget):
             self.pbar.setFormat(f"{upper_status} %p%")
             self.pbar.show()
             self.label.hide()
+            self.lyric_label.hide()
         else:
             self.label.show()
             self.pbar.hide()
+
+            show_lyric = False
+            if raw_status in ("Downloaded", "Already Exists") and item:
+                if item.get('lyrics_downloaded'):
+                    show_lyric = True
+                else:
+                    file_path = item.get('file_path')
+                    if file_path:
+                        import os
+                        lrc_path = os.path.splitext(file_path)[0] + '.lrc'
+                        if os.path.isfile(lrc_path):
+                            show_lyric = True
+
+            if show_lyric:
+                self.lyric_label.show()
+            else:
+                self.lyric_label.hide()
 
 
 
@@ -725,7 +761,7 @@ class MainWindow(QMainWindow):
 
     def add_item_to_download_list(self, item, item_metadata):
         status_widget = StatusCellWidget(self.tbl_dl_progress)
-        status_widget.update_status(self.tr("Paused"), 0, "Paused")
+        status_widget.update_status(self.tr("Paused"), 0, "Paused", item)
         pbar = status_widget.pbar
         status_label = status_widget.label
         original_setText = status_label.setText
@@ -845,7 +881,7 @@ class MainWindow(QMainWindow):
     def update_item_in_download_list(self, item, status, progress):
         self.statistics.setText(self.tr("{0} / {1}").format(config.get('total_downloaded_items'), format_bytes(config.get('total_downloaded_data'))))
         with download_queue_lock:
-            item['gui']['status_widget'].update_status(status, progress, item.get('item_status', ''))
+            item['gui']['status_widget'].update_status(status, progress, item.get('item_status', ''), item)
             self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -883,7 +919,7 @@ class MainWindow(QMainWindow):
                 logger.debug(f'Trying to cancel : {local_id}')
                 if download_queue[local_id]['item_status'] in ("Waiting", "Paused"):
                     download_queue[local_id]['item_status'] = "Cancelled"
-                    download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Cancelled"), 0, "Cancelled")
+                    download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Cancelled"), 0, "Cancelled", download_queue[local_id])
             self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -898,11 +934,11 @@ class MainWindow(QMainWindow):
                     if paused_flag:
                         download_queue[local_id]['item_status'] = "Paused"
                         download_queue[local_id]['available'] = False
-                        download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused")
+                        download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused", download_queue[local_id])
                     else:
                         download_queue[local_id]['item_status'] = "Waiting"
                         download_queue[local_id]['available'] = True
-                        download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting")
+                        download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting", download_queue[local_id])
             self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -1371,7 +1407,7 @@ class MainWindow(QMainWindow):
             item = download_queue.get(local_id)
             if item:
                 item['item_status'] = "Cancelled"
-                item['gui']['status_widget'].update_status(self.tr("Cancelled"), 0, "Cancelled")
+                item['gui']['status_widget'].update_status(self.tr("Cancelled"), 0, "Cancelled", item)
                 self.update_table_visibility()
 
 
@@ -1386,7 +1422,7 @@ class MainWindow(QMainWindow):
                     if item.get('item_status') == 'Paused':
                         item['item_status'] = 'Waiting'
                         item['available'] = True
-                        item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting")
+                        item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting", item)
         elif button_text == self.tr("Pause Downloads"):
             runtimedata.resume_event.clear()
             with download_queue_lock:
@@ -1394,7 +1430,7 @@ class MainWindow(QMainWindow):
                     if item.get('item_status') == 'Waiting':
                         item['item_status'] = 'Paused'
                         item['available'] = False
-                        item['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused")
+                        item['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused", item)
                  
         self.update_queue_button_state()
         self.update_table_visibility()
@@ -1408,7 +1444,7 @@ class MainWindow(QMainWindow):
             if item and item.get('item_status') == 'Paused':
                 item['item_status'] = 'Waiting'
                 item['available'] = True
-                item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting")
+                item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting", item)
         self.update_queue_button_state()
         self.update_table_visibility()
 
@@ -1452,11 +1488,11 @@ class MainWindow(QMainWindow):
                 if paused_flag:
                     item['item_status'] = "Paused"
                     item['available'] = False
-                    item['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused")
+                    item['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused", item)
                 else:
                     item['item_status'] = "Waiting"
                     item['available'] = True
-                    item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting")
+                    item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting", item)
                 self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -1486,7 +1522,7 @@ class MainWindow(QMainWindow):
                     if os.path.exists(file):
                         os.remove(file)
                     item['item_status'] = 'Deleted'
-                    item['gui']['status_widget'].update_status(self.tr("Deleted"), 0, "Deleted")
+                    item['gui']['status_widget'].update_status(self.tr("Deleted"), 0, "Deleted", item)
                     self.update_table_visibility()
                 except Exception as e:
                     logger.error(f"Failed to delete file: {e}")

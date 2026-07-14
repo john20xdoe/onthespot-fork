@@ -222,8 +222,10 @@ class DownloadWorker(QObject):
                                         if self.gui:
                                             self.progress.emit(item, self.tr("Getting Lyrics"), 99)
                                         extra_metadata = globals()[f"{item_service}_get_lyrics"](token, item_id, item_type, item_metadata, file_path)
-                                        if isinstance(extra_metadata, dict):
-                                            item_metadata.update(extra_metadata)
+                                        if extra_metadata:
+                                            item['lyrics_downloaded'] = True
+                                            if isinstance(extra_metadata, dict):
+                                                item_metadata.update(extra_metadata)
 
                                     if not config.get('raw_media_download'):
                                         strip_metadata(item)
@@ -709,8 +711,10 @@ class DownloadWorker(QObject):
                             if self.gui:
                                 self.progress.emit(item, self.tr("Getting Lyrics"), 99)
                             extra_metadata = globals()[f"{item_service}_get_lyrics"](token, item_id, item_type, item_metadata, file_path)
-                            if isinstance(extra_metadata, dict):
-                                item_metadata.update(extra_metadata)
+                            if extra_metadata:
+                                item['lyrics_downloaded'] = True
+                                if isinstance(extra_metadata, dict):
+                                    item_metadata.update(extra_metadata)
 
                         if config.get('raw_media_download'):
                             file_path += default_format
