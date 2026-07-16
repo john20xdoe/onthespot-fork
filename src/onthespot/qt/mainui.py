@@ -6,8 +6,8 @@ import traceback
 from urllib3.exceptions import MaxRetryError, NewConnectionError
 from PyQt6 import uic, QtGui
 from PyQt6.QtCore import QThread, QDir, Qt, pyqtSignal, QObject, QTimer, QSize
-from PyQt6.QtGui import QIcon, QColor
-from PyQt6.QtWidgets import QApplication, QMainWindow, QHeaderView, QLabel, QPushButton, QProgressBar, QTableWidgetItem, QFileDialog, QRadioButton, QHBoxLayout, QWidget, QColorDialog, QFrame
+from PyQt6.QtGui import QIcon, QColor, QPainter, QPen
+from PyQt6.QtWidgets import QApplication, QMainWindow, QHeaderView, QLabel, QPushButton, QProgressBar, QTableWidgetItem, QFileDialog, QRadioButton, QHBoxLayout, QWidget, QColorDialog, QFrame, QSizePolicy
 from ..accounts import get_account_token, FillAccountPool
 from ..api.apple_music import apple_music_add_account, apple_music_get_track_metadata
 from ..api.bandcamp import bandcamp_add_account, bandcamp_get_track_metadata
@@ -28,6 +28,219 @@ from ..utils import is_latest_release, open_item, format_bytes
 from ..search import get_search_results
 
 logger = get_logger('gui.main_ui')
+
+
+class SpinnerWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.angle = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.rotate)
+        self.setFixedSize(20, 20)
+        
+    def start(self):
+        self.timer.start(50)  # Rotate every 50ms
+        self.show()
+        
+    def stop(self):
+        self.timer.stop()
+        self.hide()
+        
+    def rotate(self):
+        self.angle = (self.angle + 30) % 360
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Center coordinates
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.rotate(self.angle)
+        
+        pen = QPen()
+        pen.setWidth(2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        
+        # Draw 8 ticks with fading opacity
+        for i in range(8):
+            color = QColor("#2596be")  # Accent Color
+            color.setAlpha(int(255 * (i / 8.0)))
+            pen.setColor(color)
+            painter.setPen(pen)
+            painter.drawLine(0, -6, 0, -3)
+            painter.rotate(45)
+
+
+class SearchWorker(QThread):
+    finished = pyqtSignal(object)
+    
+    def __init__(self, search_term, content_types):
+        super().__init__()
+        self.search_term = search_term
+        self.content_types = content_types
+        
+    def run(self):
+        try:
+            results = get_search_results(self.search_term, self.content_types)
+            self.finished.emit(results)
+        except Exception as e:
+            logger.error(f"Search failed: {e}")
+            self.finished.emit(False)
+
+
+class CategoryCellWidget(QWidget):
+    def __init__(self, category_type, category_name="", parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 1, 6, 1)
+        layout.setSpacing(6)
+        self.setLayout(layout)
+
+        # Create the pill label
+        self.pill = QLabel(category_type.upper(), self)
+        self.pill.setStyleSheet(self.get_pill_style(category_type))
+        self.pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.pill, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        if category_name:
+            # Create the text label
+            self.name_label = QLabel(category_name, self)
+            self.name_label.setWordWrap(True)
+            self.name_label.setStyleSheet("""
+                QLabel {
+                    background-color: transparent;
+                    font-size: 11px;
+                }
+            """)
+            layout.addWidget(self.name_label, 1, Qt.AlignmentFlag.AlignVCenter)
+        else:
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.setStyleSheet("background-color: transparent;")
+
+    def get_pill_style(self, category_type):
+        colors = {
+            "album": ("#1db954", "white"),       # Spotify Green
+            "audiobook": ("#27ae60", "white"),    # Darker Green
+            "playlist": ("#2596be", "white"),    # Accent Blue
+            "show": ("#8a2be2", "white"),        # Purple
+            "podcast": ("#8a2be2", "white"),     # Purple
+            "track": ("#e06666", "white"),       # Muted Red
+            "episode": ("#e67e22", "white"),     # Orange
+            "artist": ("#e74c3c", "white")       # Red/Coral
+        }
+        bg, fg = colors.get(category_type.lower(), ("#808080", "white"))
+        
+        return f"""
+            QLabel {{
+                background-color: {bg};
+                color: {fg};
+                border-radius: 3px;
+                font-size: 8px;
+                font-weight: bold;
+                padding: 1px 4px;
+            }}
+        """
+
+
+
+class StatusCellWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 0, 6, 0)
+        layout.setSpacing(4)
+        self.setLayout(layout)
+
+        self.pbar = QProgressBar(self)
+        self.pbar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid rgba(128, 128, 128, 0.3);
+                border-radius: 4px;
+                text-align: center;
+                background-color: rgba(128, 128, 128, 0.1);
+                font-size: 8px;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background-color: #2596BE;
+                border-radius: 3px;
+            }
+        """)
+        self.pbar.setValue(0)
+        self.pbar.setFixedHeight(18)
+        self.pbar.setTextVisible(True)
+
+        self.label = QLabel(self)
+        self.label.setStyleSheet("""
+            QLabel {
+                background-color: transparent;
+                font-size: 8px;
+                font-weight: bold;
+            }
+        """)
+
+        self.lyric_label = QLabel(self)
+        self.lyric_label.setFixedSize(14, 14)
+        self.lyric_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lyric_label.setText("L")
+        self.lyric_label.setToolTip(self.tr("Lyrics included"))
+        self.lyric_label.setStyleSheet("""
+            QLabel {
+                background-color: #2596BE;
+                color: white;
+                border-radius: 3px;
+                font-size: 9px;
+                font-weight: bold;
+            }
+        """)
+
+        layout.addWidget(self.pbar)
+        layout.addWidget(self.label, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.lyric_label, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.setStyleSheet("background-color: transparent;")
+
+        self.label.hide()
+        self.lyric_label.hide()
+
+    def update_status(self, status, progress, raw_status, item=None):
+        upper_status = status.upper()
+        self.label.setText(upper_status)
+        self.pbar.setValue(progress)
+
+        show_progress_bar_statuses = {
+            "Paused", "Waiting", "Downloading", "Downloading Video",
+            "Downloading Audio", "Downloading Chapters", "Downloading Subtitles"
+        }
+
+        if raw_status in show_progress_bar_statuses:
+            self.pbar.setFormat(f"{upper_status} %p%")
+            self.pbar.show()
+            self.label.hide()
+            self.lyric_label.hide()
+        else:
+            self.label.show()
+            self.pbar.hide()
+
+            show_lyric = False
+            if raw_status in ("Downloaded", "Already Exists") and item:
+                if item.get('lyrics_downloaded'):
+                    show_lyric = True
+                else:
+                    file_path = item.get('file_path')
+                    if file_path:
+                        import os
+                        lrc_path = os.path.splitext(file_path)[0] + '.lrc'
+                        if os.path.isfile(lrc_path):
+                            show_lyric = True
+
+            if show_lyric:
+                self.lyric_label.show()
+            else:
+                self.lyric_label.hide()
+
 
 
 class QueueWorker(QObject):
@@ -132,6 +345,7 @@ class MainWindow(QMainWindow):
                 border-radius: 12px;
             }
         """)
+        self.active_service_pill.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         pill_layout = QHBoxLayout(self.active_service_pill)
         pill_layout.setContentsMargins(8, 4, 8, 4)
         pill_layout.setSpacing(6)
@@ -154,6 +368,11 @@ class MainWindow(QMainWindow):
 
         self.verticalLayout_3.insertLayout(0, self.pill_container_layout)
         self.active_service_pill.hide()
+
+        # Create search spinner
+        self.search_spinner = SpinnerWidget(self)
+        self.horizontalLayout_5.addWidget(self.search_spinner)
+        self.search_spinner.hide()
 
         # Create "Begin Download" button layout and button
         self.begin_download_layout = QHBoxLayout()
@@ -300,8 +519,6 @@ class MainWindow(QMainWindow):
         self.search_term.returnPressed.connect(self.fill_search_table)
         self.btn_progress_clear_complete.clicked.connect(self.remove_completed_from_download_list)
 
-        self.btn_search_filter_toggle.clicked.connect(lambda toggle: self.group_search_items.show() if self.group_search_items.isHidden() else self.group_search_items.hide())
-        self.btn_search_filter_toggle.clicked.connect(lambda switch: self.btn_search_filter_toggle.setIcon(self.get_icon('collapse_down')) if self.group_search_items.isHidden() else self.btn_search_filter_toggle.setIcon(self.get_icon('collapse_up')))
         self.btn_download_filter_toggle.clicked.connect(lambda toggle: self.group_download_items.show() if self.group_download_items.isHidden() else self.group_download_items.hide())
         self.btn_download_filter_toggle.clicked.connect(lambda switch: self.btn_download_filter_toggle.setIcon(self.get_icon('collapse_up')) if self.group_download_items.isHidden() else self.btn_download_filter_toggle.setIcon(self.get_icon('collapse_down')))
 
@@ -322,17 +539,10 @@ class MainWindow(QMainWindow):
 
 
 
-        self.clear_cache.clicked.connect(lambda:
-            shutil.rmtree(os.path.join(cache_dir(), "reqcache")) and
-            shutil.rmtree(os.path.join(cache_dir(), "logs")) and
-            self.show_popup_dialog(self.tr("Cache Cleared"))
-            )
-        self.export_logs.clicked.connect(lambda: shutil.copy(
-            os.path.join(cache_dir(), "logs", config.session_uuid, "onthespot.log"),
-            os.path.join(os.path.expanduser("~"), "Downloads", "onthespot.log")) and
-            self.show_popup_dialog(self.tr("Logs exported to '{0}'").format(os.path.join(os.path.expanduser("~"), "Downloads", "onthespot.log") or True))
-            )
-        self.donate.clicked.connect(lambda: open_item('https://justin025.github.io/about.html'))
+        self.clear_cache.clicked.connect(self.clear_cache_clicked)
+        self.export_logs.clicked.connect(self.export_logs_clicked)
+        self.donate.setText(self.tr("GitHub"))
+        self.donate.clicked.connect(lambda: open_item('https://github.com/john20xdoe/onthespot-fork'))
 
 
     def set_table_props(self):
@@ -353,21 +563,53 @@ class MainWindow(QMainWindow):
         self.tbl_search_results.horizontalHeader().setSectionsMovable(True)
         self.tbl_search_results.horizontalHeader().setSectionsClickable(True)
         self.tbl_search_results.setIconSize(QSize(20, 20))
-        self.tbl_search_results.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for i in range(1,5):
-            self.tbl_search_results.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-
+        self.tbl_search_results.verticalHeader().setDefaultSectionSize(30)
+        self.tbl_search_results.horizontalHeader().setStretchLastSection(False)
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)     # Name
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive) # By
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive) # Type
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)       # Actions
+        self.tbl_search_results.setColumnWidth(1, 170)
+        self.tbl_search_results.setColumnWidth(2, 80)
+        self.tbl_search_results.setColumnWidth(3, 44)
+        if self.tbl_search_results.horizontalHeaderItem(3):
+            self.tbl_search_results.horizontalHeaderItem(3).setText("")
+ 
         # Download progress table
         #self.tbl_dl_progress.setSortingEnabled(True)
+        self.tbl_dl_progress.setColumnCount(7)
+        self.tbl_dl_progress.setHorizontalHeaderLabels([
+            self.tr("Item ID"),
+            self.tr("Title"),
+            self.tr("By"),
+            self.tr("Type"),
+            self.tr("Service"),
+            self.tr("Status"),
+            ""
+        ])
         self.tbl_dl_progress.horizontalHeader().setSectionsMovable(True)
         self.tbl_dl_progress.horizontalHeader().setSectionsClickable(True)
         self.tbl_dl_progress.setIconSize(QSize(20, 20))
+        self.tbl_dl_progress.verticalHeader().setDefaultSectionSize(36)
+        self.tbl_dl_progress.horizontalHeader().setStretchLastSection(False)
         if not config.get("debug_mode"):
+            self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
             self.tbl_dl_progress.setColumnWidth(0, 0)
-        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for i in range(2,8):
-            self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-
+        else:
+            self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            self.tbl_dl_progress.setColumnWidth(0, 50)
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)     # Title
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive) # By
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive) # Type (Category)
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive) # Service
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive) # Status
+        self.tbl_dl_progress.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)       # Actions
+        self.tbl_dl_progress.setColumnWidth(2, 170)
+        self.tbl_dl_progress.setColumnWidth(3, 160)
+        self.tbl_dl_progress.setColumnWidth(4, 140)
+        self.tbl_dl_progress.setColumnWidth(5, 134)
+        self.tbl_dl_progress.setColumnWidth(6, 44)
+ 
         return True
 
 
@@ -394,6 +636,25 @@ class MainWindow(QMainWindow):
         if new_path:
             temp_download_path.append(new_path)
 
+    def clear_cache_clicked(self):
+        shutil.rmtree(os.path.join(cache_dir(), "reqcache"), ignore_errors=True)
+        shutil.rmtree(os.path.join(cache_dir(), "logs"), ignore_errors=True)
+        self.show_popup_dialog(self.tr("Cache Cleared"))
+
+    def export_logs_clicked(self):
+        src = os.path.join(cache_dir(), "logs", config.session_uuid, "onthespot.log")
+        dst = os.path.join(os.path.expanduser("~"), "Downloads", "onthespot.log")
+        if os.path.exists(src):
+            try:
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy(src, dst)
+                self.show_popup_dialog(self.tr("Logs exported to '{0}'").format(dst))
+            except Exception as e:
+                logger.error(f"Failed to export logs: {e}")
+                self.show_popup_dialog(self.tr("Failed to export logs: {0}").format(e))
+        else:
+            self.show_popup_dialog(self.tr("No log file found to export."))
+
     def show_popup_dialog(self, txt, btn_hide=False, download=False):
         if download and config.get('disable_download_popups'):
             return
@@ -419,7 +680,7 @@ class MainWindow(QMainWindow):
         # Update Checker
         if config.get("check_for_updates"):
             if not is_latest_release():
-                self.show_popup_dialog(self.tr("<p>An update is available at the link below,<p><a style='color: #6495ed;' href='https://github.com/justin025/onthespot/releases/latest'>https://github.com/justin025/onthespot/releases/latest</a>"))
+                self.show_popup_dialog(self.tr("<p>An update is available at the link below,<p><a style='color: #6495ed;' href='https://github.com/john20xdoe/onthespot-fork/releases/latest'>https://github.com/john20xdoe/onthespot-fork/releases/latest</a>"))
 
 
     def set_active_session(self, index):
@@ -499,50 +760,69 @@ class MainWindow(QMainWindow):
 
 
     def add_item_to_download_list(self, item, item_metadata):
-        # Items
-        pbar = QProgressBar()
-        pbar.setStyleSheet("""
-            QProgressBar {
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #2596BE;
-                color: white;
-            }
-        """)
-        pbar.setValue(0)
-        pbar.setMinimumHeight(30)
+        status_widget = StatusCellWidget(self.tbl_dl_progress)
+        status_widget.update_status(self.tr("Paused"), 0, "Paused", item)
+        pbar = status_widget.pbar
+        status_label = status_widget.label
+        original_setText = status_label.setText
+        status_label.setText = lambda text: original_setText(text.upper())
+
+
 
         actions_btn = QPushButton()
-        actions_btn.setText('...')
-        actions_btn.setMinimumHeight(30)
+        actions_btn.setIcon(self.get_icon('collapse_down'))
+        actions_btn.setIconSize(QSize(14, 14))
+        actions_btn.setFixedSize(24, 24)
         actions_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        actions_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: rgba(128, 128, 128, 0.25);
+            }
+            QPushButton:pressed {
+                background-color: rgba(128, 128, 128, 0.4);
+            }
+        """)
         actions_btn.clicked.connect(lambda checked, lid=item['local_id'], btn=actions_btn: 
             self.show_download_item_context_menu(lid, btn.mapToGlobal(btn.rect().bottomLeft()))
         )
 
+        # Wrap actions button in a container to center it vertically and apply margins
+        btn_container = QWidget()
+        btn_layout = QHBoxLayout(btn_container)
+        btn_layout.addWidget(actions_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(0)
+        btn_container.setStyleSheet("background-color: transparent;")
+
         item_by = item_metadata.get('artists') if item_metadata.get('artists') else item_metadata.get('show_name')
 
+        category_type = item['parent_category']
         playlist_name = ''
         playlist_by = ''
-        if item['parent_category'] == 'playlist':
-            item_category = f'Playlist: {item["playlist_name"]}'
+        if category_type == 'playlist':
+            category_name = item.get('playlist_name', '')
             playlist_name = item.get('playlist_name')
             playlist_by = item.get('playlist_by')
-        elif item['parent_category'] in ('album', 'show'):
-            parent_name = item_metadata.get("album_name") if item_metadata.get("album_name") else item_metadata.get("show_name")
-            item_category = f'{item["parent_category"].title()}: {parent_name}'
+        elif category_type in ('album', 'show'):
+            category_name = item_metadata.get("album_name") if item_metadata.get("album_name") else item_metadata.get("show_name")
         else:
-            item_category = f'{item["parent_category"].title()}: {item_metadata["title"]}'
+            category_name = item_metadata.get("title", "")
+            
+        if not category_name:
+            category_name = "Unknown"
+
+        category_widget = CategoryCellWidget(category_type, category_name, self.tbl_dl_progress)
 
         item_service = item["item_service"]
         service_label = QTableWidgetItem(str(item_service).replace('_', ' ').title())
         service_label.setIcon(self.get_icon(item_service))
         service_label.setBackground(QColor(0, 0, 0, 0))
 
-        status_label = QLabel(self.tbl_dl_progress)
-        status_label.setText(self.tr("Paused"))
-        status_label.setStyleSheet("background-color: transparent;")
 
         rows = self.tbl_dl_progress.rowCount()
         self.tbl_dl_progress.insertRow(rows)
@@ -554,6 +834,7 @@ class MainWindow(QMainWindow):
             self.tbl_dl_progress.setRowHeight(rows, config.get("thumbnail_size"))
             item_label = LabelWithThumb(title, item_metadata.get('image_url'))
         else:
+            self.tbl_dl_progress.setRowHeight(rows, 38)
             item_label = QLabel(self.tbl_dl_progress)
             item_label.setText(title)
             item_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -564,11 +845,10 @@ class MainWindow(QMainWindow):
         self.tbl_dl_progress.setItem(rows, 0, QTableWidgetItem(str(item['local_id'])))
         self.tbl_dl_progress.setCellWidget(rows, 1, item_label)
         self.tbl_dl_progress.setItem(rows, 2, QTableWidgetItem(item_by))
-        self.tbl_dl_progress.setItem(rows, 3, QTableWidgetItem(item_category))
+        self.tbl_dl_progress.setCellWidget(rows, 3, category_widget)
         self.tbl_dl_progress.setItem(rows, 4, service_label)
-        self.tbl_dl_progress.setCellWidget(rows, 5, status_label)
-        self.tbl_dl_progress.setCellWidget(rows, 6, pbar)
-        self.tbl_dl_progress.setCellWidget(rows, 7, actions_btn)
+        self.tbl_dl_progress.setCellWidget(rows, 5, status_widget)
+        self.tbl_dl_progress.setCellWidget(rows, 6, btn_container)
 
         # Hide if filter is applied
         self.update_table_visibility()
@@ -589,6 +869,7 @@ class MainWindow(QMainWindow):
                 'item_metadata': item_metadata,
                 "gui": {
                     "item_label": item_label,
+                    "status_widget": status_widget,
                     "status_label": status_label,
                     "progress_bar": pbar,
                     "actions_btn": actions_btn
@@ -600,8 +881,7 @@ class MainWindow(QMainWindow):
     def update_item_in_download_list(self, item, status, progress):
         self.statistics.setText(self.tr("{0} / {1}").format(config.get('total_downloaded_items'), format_bytes(config.get('total_downloaded_data'))))
         with download_queue_lock:
-            item['gui']['status_label'].setText(status)
-            item['gui']['progress_bar'].setValue(progress)
+            item['gui']['status_widget'].update_status(status, progress, item.get('item_status', ''), item)
             self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -639,8 +919,7 @@ class MainWindow(QMainWindow):
                 logger.debug(f'Trying to cancel : {local_id}')
                 if download_queue[local_id]['item_status'] in ("Waiting", "Paused"):
                     download_queue[local_id]['item_status'] = "Cancelled"
-                    download_queue[local_id]['gui']['status_label'].setText(self.tr("Cancelled"))
-                    download_queue[local_id]['gui']['progress_bar'].setValue(0)
+                    download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Cancelled"), 0, "Cancelled", download_queue[local_id])
             self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -655,11 +934,11 @@ class MainWindow(QMainWindow):
                     if paused_flag:
                         download_queue[local_id]['item_status'] = "Paused"
                         download_queue[local_id]['available'] = False
-                        download_queue[local_id]['gui']['status_label'].setText(self.tr("Paused"))
+                        download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused", download_queue[local_id])
                     else:
                         download_queue[local_id]['item_status'] = "Waiting"
                         download_queue[local_id]['available'] = True
-                        download_queue[local_id]['gui']['status_label'].setText(self.tr("Waiting"))
+                        download_queue[local_id]['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting", download_queue[local_id])
             self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -912,9 +1191,16 @@ class MainWindow(QMainWindow):
 
 
     def fill_search_table(self):
+        if hasattr(self, 'search_worker') and self.search_worker.isRunning():
+            return
+
+        search_term = self.search_term.text().strip()
+        if not search_term:
+            return
+
         while self.tbl_search_results.rowCount() > 0:
             self.tbl_search_results.removeRow(0)
-        search_term = self.search_term.text().strip()
+
         content_types = []
         if self.enable_search_tracks.isChecked():
             content_types.append('track')
@@ -931,7 +1217,20 @@ class MainWindow(QMainWindow):
         if self.enable_search_audiobooks.isChecked():
             content_types.append('audiobook')
 
-        results = get_search_results(search_term, content_types)
+        self.search_term.setDisabled(True)
+        self.btn_search.setDisabled(True)
+        self.search_spinner.start()
+
+        self.search_worker = SearchWorker(search_term, content_types)
+        self.search_worker.finished.connect(self.on_search_finished)
+        self.search_worker.start()
+
+    def on_search_finished(self, results):
+        self.search_spinner.stop()
+        self.search_term.setDisabled(False)
+        self.btn_search.setDisabled(False)
+        self.search_term.setFocus()
+
         if results is None:
             self.show_popup_dialog(self.tr("You need to login to at least one account to use this feature."))
             self.search_term.setText('')
@@ -957,31 +1256,50 @@ class MainWindow(QMainWindow):
                 self.tbl_search_results.setRowHeight(rows, config.get("thumbnail_size"))
                 item_label = LabelWithThumb(result['item_name'], result['item_thumbnail_url'])
             else:
+                self.tbl_search_results.setRowHeight(rows, 30)
                 item_label = QLabel(self.tbl_search_results)
                 item_label.setText(result['item_name'])
             item_label.setStyleSheet("background-color: transparent;")
-
             actions_btn = QPushButton()
-            actions_btn.setText('...')
-            actions_btn.setMinimumHeight(30)
+            actions_btn.setIcon(self.get_icon('collapse_down'))
+            actions_btn.setIconSize(QSize(14, 14))
+            actions_btn.setFixedSize(24, 24)
             actions_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            actions_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    border: none;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: rgba(128, 128, 128, 0.25);
+                }
+                QPushButton:pressed {
+                    background-color: rgba(128, 128, 128, 0.4);
+                }
+            """)
             actions_btn.clicked.connect(lambda checked, res=result, btn=actions_btn: 
                 self.show_search_item_context_menu(res, btn.mapToGlobal(btn.rect().bottomLeft()))
             )
 
-            service = QTableWidgetItem(result['item_service'].replace('_', ' ').title())
-            service.setIcon(self.get_icon(result['item_service']))
+            # Wrap actions button in a container to center it vertically and apply margins
+            btn_container = QWidget()
+            btn_layout = QHBoxLayout(btn_container)
+            btn_layout.addWidget(actions_btn, 0, Qt.AlignmentFlag.AlignCenter)
+            btn_layout.setContentsMargins(0, 0, 0, 0)
+            btn_layout.setSpacing(0)
+            btn_container.setStyleSheet("background-color: transparent;")
 
             by_item = QTableWidgetItem(str(result['item_by']))
             by_item.setData(Qt.ItemDataRole.UserRole, result)
 
+            item_type = result['item_type'].replace('podcast_', '')
+            type_widget = CategoryCellWidget(item_type, "", self.tbl_search_results)
+
             self.tbl_search_results.setCellWidget(rows, 0, item_label)
             self.tbl_search_results.setItem(rows, 1, by_item)
-            self.tbl_search_results.setItem(rows, 2, QTableWidgetItem(result['item_type'].replace('podcast_', '').title()))
-            self.tbl_search_results.setItem(rows, 3, service)
-            self.tbl_search_results.setCellWidget(rows, 4, actions_btn)
-            self.tbl_search_results.horizontalHeader().resizeSection(0, 450)
-            self.tbl_search_results.horizontalHeader().resizeSection(4, 100)
+            self.tbl_search_results.setCellWidget(rows, 2, type_widget)
+            self.tbl_search_results.setCellWidget(rows, 3, btn_container)
 
         self.search_term.setText('')
 
@@ -994,9 +1312,9 @@ class MainWindow(QMainWindow):
         show_completed = self.download_queue_show_completed.isChecked()
 
         for row in range(self.tbl_dl_progress.rowCount()):
-            label = self.tbl_dl_progress.cellWidget(row, 5)  # Check the Status column
-            if label:
-                status = label.text()
+            widget = self.tbl_dl_progress.cellWidget(row, 5)  # Check the Status column
+            if widget:
+                status = widget.label.text() if hasattr(widget, 'label') else widget.text()
                 # Determine visibility based on checkboxes
                 if ((status == self.tr("Waiting") or status == self.tr("Paused")) and not show_waiting) or \
                    (status == self.tr("Failed") and not show_failed) or \
@@ -1031,56 +1349,57 @@ class MainWindow(QMainWindow):
             if not item:
                 return
             
-            menu = QMenu(self)
-            menu.setStyleSheet(config.get('theme'))
-            
             status = item.get('item_status', 'Waiting')
             progress = item['gui']['progress_bar'].value()
             metadata = item.get('item_metadata', {})
+            file_path = item.get('file_path')
             
-            copy_action = menu.addAction(self.get_icon('link'), self.tr("Copy Link"))
+        menu = QMenu(self)
+        menu.setStyleSheet(config.get('theme'))
+        
+        copy_action = menu.addAction(self.get_icon('link'), self.tr("Copy Link"))
+        
+        cancel_action = None
+        retry_action = None
+        open_action = None
+        locate_action = None
+        delete_action = None
+        download_item_action = None
+        
+        if status in ('Waiting', 'Downloading', 'Paused') and progress < 100:
+            cancel_action = menu.addAction(self.get_icon('stop'), self.tr("Cancel"))
+        
+        if status == 'Paused':
+            download_item_action = menu.addAction(self.get_icon('download'), self.tr("Download"))
+        
+        if status in ('Failed', 'Cancelled', 'Deleted'):
+            retry_action = menu.addAction(self.get_icon('retry'), self.tr("Retry"))
             
-            cancel_action = None
-            retry_action = None
-            open_action = None
-            locate_action = None
-            delete_action = None
-            download_item_action = None
+        if progress == 100 or status in ('Downloaded', 'Already Exists'):
+            if file_path:
+                open_action = menu.addAction(self.get_icon('file'), self.tr("Open File"))
+                locate_action = menu.addAction(self.get_icon('folder'), self.tr("Locate File"))
+                delete_action = menu.addAction(self.get_icon('trash'), self.tr("Delete File"))
+        
+        action = menu.exec(global_pos)
+        if not action:
+            return
             
-            if status in ('Waiting', 'Downloading', 'Paused') and progress < 100:
-                cancel_action = menu.addAction(self.get_icon('stop'), self.tr("Cancel"))
-            
-            if status == 'Paused':
-                download_item_action = menu.addAction(self.get_icon('download'), self.tr("Download"))
-            
-            if status in ('Failed', 'Cancelled', 'Deleted'):
-                retry_action = menu.addAction(self.get_icon('retry'), self.tr("Retry"))
-                
-            if progress == 100 or status in ('Downloaded', 'Already Exists'):
-                if item.get('file_path'):
-                    open_action = menu.addAction(self.get_icon('file'), self.tr("Open File"))
-                    locate_action = menu.addAction(self.get_icon('folder'), self.tr("Locate File"))
-                    delete_action = menu.addAction(self.get_icon('trash'), self.tr("Delete File"))
-            
-            action = menu.exec(global_pos)
-            if not action:
-                return
-                
-            if action == copy_action:
-                QApplication.clipboard().setText(metadata.get('item_url', ''))
-                self.show_popup_dialog(self.tr("The URL has been copied to the clipboard."), download=True)
-            elif action == download_item_action:
-                self.start_paused_download(local_id)
-            elif action == cancel_action:
-                self.cancel_download_item(local_id)
-            elif action == retry_action:
-                self.retry_download_item(local_id)
-            elif action == open_action:
-                self.open_download_file(local_id)
-            elif action == locate_action:
-                self.locate_download_file(local_id)
-            elif action == delete_action:
-                self.delete_download_file(local_id)
+        if action == copy_action:
+            QApplication.clipboard().setText(metadata.get('item_url', ''))
+            self.show_popup_dialog(self.tr("The URL has been copied to the clipboard."), download=True)
+        elif action == download_item_action:
+            self.start_paused_download(local_id)
+        elif action == cancel_action:
+            self.cancel_download_item(local_id)
+        elif action == retry_action:
+            self.retry_download_item(local_id)
+        elif action == open_action:
+            self.open_download_file(local_id)
+        elif action == locate_action:
+            self.locate_download_file(local_id)
+        elif action == delete_action:
+            self.delete_download_file(local_id)
 
 
     def cancel_download_item(self, local_id):
@@ -1088,8 +1407,7 @@ class MainWindow(QMainWindow):
             item = download_queue.get(local_id)
             if item:
                 item['item_status'] = "Cancelled"
-                item['gui']['status_label'].setText(self.tr("Cancelled"))
-                item['gui']['progress_bar'].setValue(0)
+                item['gui']['status_widget'].update_status(self.tr("Cancelled"), 0, "Cancelled", item)
                 self.update_table_visibility()
 
 
@@ -1104,7 +1422,7 @@ class MainWindow(QMainWindow):
                     if item.get('item_status') == 'Paused':
                         item['item_status'] = 'Waiting'
                         item['available'] = True
-                        item['gui']['status_label'].setText(self.tr("Waiting"))
+                        item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting", item)
         elif button_text == self.tr("Pause Downloads"):
             runtimedata.resume_event.clear()
             with download_queue_lock:
@@ -1112,7 +1430,7 @@ class MainWindow(QMainWindow):
                     if item.get('item_status') == 'Waiting':
                         item['item_status'] = 'Paused'
                         item['available'] = False
-                        item['gui']['status_label'].setText(self.tr("Paused"))
+                        item['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused", item)
                  
         self.update_queue_button_state()
         self.update_table_visibility()
@@ -1126,7 +1444,7 @@ class MainWindow(QMainWindow):
             if item and item.get('item_status') == 'Paused':
                 item['item_status'] = 'Waiting'
                 item['available'] = True
-                item['gui']['status_label'].setText(self.tr("Waiting"))
+                item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting", item)
         self.update_queue_button_state()
         self.update_table_visibility()
 
@@ -1170,12 +1488,11 @@ class MainWindow(QMainWindow):
                 if paused_flag:
                     item['item_status'] = "Paused"
                     item['available'] = False
-                    item['gui']['status_label'].setText(self.tr("Paused"))
+                    item['gui']['status_widget'].update_status(self.tr("Paused"), 0, "Paused", item)
                 else:
                     item['item_status'] = "Waiting"
                     item['available'] = True
-                    item['gui']['status_label'].setText(self.tr("Waiting"))
-                item['gui']['progress_bar'].setValue(0)
+                    item['gui']['status_widget'].update_status(self.tr("Waiting"), 0, "Waiting", item)
                 self.update_table_visibility()
         self.update_queue_button_state()
 
@@ -1205,7 +1522,7 @@ class MainWindow(QMainWindow):
                     if os.path.exists(file):
                         os.remove(file)
                     item['item_status'] = 'Deleted'
-                    item['gui']['status_label'].setText(self.tr("Deleted"))
+                    item['gui']['status_widget'].update_status(self.tr("Deleted"), 0, "Deleted", item)
                     self.update_table_visibility()
                 except Exception as e:
                     logger.error(f"Failed to delete file: {e}")

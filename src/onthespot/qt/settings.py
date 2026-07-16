@@ -38,7 +38,6 @@ def load_config(self):
     self.settings_sidebar.setCurrentRow(0)
 
     # Hide Popup Settings
-    self.group_search_items.hide()
     self.group_download_items.hide()
 
     # Icons
@@ -72,7 +71,6 @@ def load_config(self):
     self.btn_video_download_path.setIcon(self.get_icon('folder'))
     self.btn_download_tmp_browse.setIcon(self.get_icon('folder'))
     self.btn_search.setIcon(self.get_icon('search'))
-    self.btn_search_filter_toggle.setIcon(self.get_icon('collapse_down'))
     self.btn_download_filter_toggle.setIcon(self.get_icon('collapse_up'))
 
     # Disable scrolling to change values of QSpinBoxes and QComboBoxes

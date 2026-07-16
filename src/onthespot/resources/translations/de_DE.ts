@@ -241,8 +241,8 @@
     </message>
     <message>
       <location filename="../../gui/mainui.py" line="527" />
-      <source>&lt;p&gt;An update is available at the link below,&lt;p&gt;&lt;a style='color: #6495ed;' href='https://github.com/justin025/onthespot/releases/latest'&gt;https://github.com/justin025/onthespot/releases/latest&lt;/a&gt;</source>
-      <translation>&lt;p&gt;Eine aktualisierte Fassung finden Sie unter folgendem Link,&lt;p&gt;&lt;a style='color: #6495ed;' href='https://github.com/justin025/onthespot/releases/latest'&gt;https://github.com/justin025/onthespot/releases/latest&lt;/a&gt;</translation>
+      <source>&lt;p&gt;An update is available at the link below,&lt;p&gt;&lt;a style='color: #6495ed;' href='https://github.com/john20xdoe/onthespot-fork/releases/latest'&gt;https://github.com/john20xdoe/onthespot-fork/releases/latest&lt;/a&gt;</source>
+      <translation>&lt;p&gt;Eine aktualisierte Fassung finden Sie unter folgendem Link,&lt;p&gt;&lt;a style='color: #6495ed;' href='https://github.com/john20xdoe/onthespot-fork/releases/latest'&gt;https://github.com/john20xdoe/onthespot-fork/releases/latest&lt;/a&gt;</translation>
     </message>
     <message>
       <location filename="../../gui/mainui.py" line="542" />

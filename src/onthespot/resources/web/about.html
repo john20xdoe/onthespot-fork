@@ -10,7 +10,7 @@
     <body>
         <div class="header">
             <ul>
-                <li class="hide-on-mobile"><a href="https://github.com/justin025/onthespot/" target="_blank">OnTheSpot</a></li>
+                <li class="hide-on-mobile"><a href="https://github.com/john20xdoe/onthespot-fork/" target="_blank">OnTheSpot</a></li>
                 <li><a href="/search">Search</a></li>
                 <li><a href="/download_queue">Downloads</a></li>
                 <li><a href="/settings">Settings</a></li>
@@ -19,48 +19,59 @@
         </div>
 
         <br>
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
-            <div style="display: flex; align-items: center;">
-                <p style="margin-right: 15px; margin-left: 15px;">Version: {{ version }}</p>
-                <p>|</p>
-                <p style="margin-right: 5px; margin-left: 15px;">Total Downloads: {{ statistics }}</p>
-            </div>
+        <div class="about-hero">
+            <img src="/icons/onthespot.png" alt="OnTheSpot Logo" class="about-logo">
+            <h1>OnTheSpot</h1>
+            <p class="about-subtitle">A simple and easy to use media downloader fork</p>
+        </div>
 
-            <div style="display: flex; align-items: center;">
-                <button onclick="clearCache()" class="download-action-button" class="hide-on-mobile" style="margin-right: 5px;">
-                    <img id="collapse_button_icon" src="/icons/trash.png" loading="lazy" style="width: 15px; height: 15px;">
-                    Clear Cache
-                </button>
-                <button onclick="window.location.href='/api/download/logs';" class="download-action-button" class="hide-on-mobile" style="margin-right: 5px;">
-                    <img id="collapse_button_icon" src="/icons/export_file.png" loading="lazy" style="width: 15px; height: 15px;">
-                    Export Logs
-                </button>
-                <button href="https://justin025.github.io/about.html" onclick="window.open('https://justin025.github.io/about.html', '_blank');" class="download-action-button" class="hide-on-mobile" style="margin-right: 5px;">
-                    <img id="collapse_button_icon" src="/icons/filled_heart.png" loading="lazy" style="width: 15px; height: 15px;">
-                    Donate
-                </button>
+        <div class="about-stats-container">
+            <div class="about-card">
+                <span class="card-label">Version</span>
+                <span class="card-value">{{ version }}</span>
+            </div>
+            <div class="about-card">
+                <span class="card-label">Total Downloads</span>
+                <span class="card-value">{{ statistics }}</span>
             </div>
         </div>
 
-        <h1 align="center">Disclaimer</h1>
-        <br>
-        <p style="font-size: 14pt; width: 70%; margin: 0 auto; text-align: center;">
-            OnTheSpot is strictly intended for educational, private and fair use only in compliance with the
-            <a href="https://www.copyright.gov/dmca/" style="text-decoration: underline; color:#64B5F6;">
-                Digital Millennium Copyright Act (DMCA), Section 1201
-            </a>
-            . It is not affiliated with or endorsed by any music streaming services or platforms.
-            The contributors / developers of OnTheSpot are not responsible for  any misuse of the
-            program or source code.  Users are solely responsible for ensuring that their use of
-            OnTheSpot complies with all relevant/applicable laws in their country.The creators
-            and contributors of OnTheSpot assume no liability for any misuse of legal terms
-            associated with the application or its source code. Licensed under GPL-2.0.
-            <br>
-            <br>
-            <a href="https://justin025.github.io/about.html" style="text-decoration: underline; color:#64B5F6;">
-                <strong>Donate <3</strong>
-            </a>
-        </p>
+        <div class="about-actions">
+            <button onclick="clearCache()" class="download-action-button hide-on-mobile">
+                <img id="collapse_button_icon" src="/icons/trash.png" loading="lazy" style="width: 15px; height: 15px;">
+                Clear Cache
+            </button>
+            <button onclick="window.location.href='/api/download/logs';" class="download-action-button hide-on-mobile">
+                <img id="collapse_button_icon" src="/icons/export_file.png" loading="lazy" style="width: 15px; height: 15px;">
+                Export Logs
+            </button>
+            <button onclick="window.open('https://github.com/john20xdoe/onthespot-fork', '_blank');" class="download-action-button hide-on-mobile">
+                <img id="collapse_button_icon" src="/icons/link.png" loading="lazy" style="width: 15px; height: 15px;">
+                GitHub Fork
+            </button>
+        </div>
+
+        <div class="disclaimer-callout">
+            <h2>Disclaimer</h2>
+            <p>
+                OnTheSpot is strictly intended for educational, private and fair use only in compliance with the
+                <a href="https://www.copyright.gov/dmca/" target="_blank" style="text-decoration: underline; color:#64B5F6;">
+                    Digital Millennium Copyright Act (DMCA), Section 1201
+                </a>.
+                It is not affiliated with or endorsed by any music streaming services or platforms.
+                The contributors and developers of OnTheSpot are not responsible for any misuse of the
+                program or source code. Users are solely responsible for ensuring that their use of
+                OnTheSpot complies with all relevant/applicable laws in their country. The creators
+                and contributors of OnTheSpot assume no liability for any misuse of legal terms
+                associated with the application or its source code. Licensed under GPL-2.0.
+            </p>
+            <div class="disclaimer-links">
+                <a href="https://github.com/john20xdoe/onthespot-fork" target="_blank" style="text-decoration: underline; color:#64B5F6;">
+                    <strong>GitHub Repository</strong>
+                </a>
+            </div>
+        </div>
+
         <script>
             function clearCache() {
                 fetch('/api/clear_cache', {
@@ -70,7 +81,7 @@
                 .then(data => {
                     if (data.success) {
                         alert('Cache cleared successfully!');
-                        }
+                    }
                 });
             }
         </script>

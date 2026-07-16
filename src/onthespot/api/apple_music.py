@@ -158,6 +158,7 @@ def apple_music_get_token(parsing_index):
 
 
 def apple_music_get_search_results(session, search_term, content_types):
+    from urllib.parse import quote
     search_types = []
     if 'track' in content_types:
         search_types.append('songs')
@@ -168,12 +169,15 @@ def apple_music_get_search_results(session, search_term, content_types):
     if 'playlist' in content_types:
         search_types.append('playlists')
 
-    params = {}
-    params['term'] = search_term
-    params['limit'] = config.get("max_search_results")
-    params['types'] = ",".join(search_types)
+    q_term = quote(search_term)
+    limit = config.get("max_search_results")
+    types = ",".join(search_types)
 
-    results = make_call(f'{BASE_URL}/catalog/{session.cookies.get("itua")}/search', params=params, session=session, skip_cache=True)
+    url = f'{BASE_URL}/catalog/{session.cookies.get("itua")}/search?term={q_term}&limit={limit}&types={types}'
+    results = make_call(url, session=session, skip_cache=True)
+
+    if not results or 'results' not in results:
+        return []
 
     search_results = []
     for result in results['results']:
@@ -231,7 +235,7 @@ def apple_music_get_search_results(session, search_term, content_types):
 
 def apple_music_get_track_metadata(session, item_id):
     params = {}
-    params['include'] = 'lyrics'
+    params['include'] = 'lyrics,artists'
     track_data = make_call(f'{BASE_URL}/catalog/{session.cookies.get("itua")}/songs/{item_id}', params=params, session=session)
     try:
         album_id = track_data.get('data', [])[0].get('relationships', {}).get('albums', {}).get('data', [])[0].get('id', {})
@@ -241,8 +245,18 @@ def apple_music_get_track_metadata(session, item_id):
 
     # Artists
     artists = []
-    for artist in track_data.get('data', [])[0].get('attributes', {}).get('artistName').replace("&", ",").split(","):
-        artists.append(artist.strip())
+    included = track_data.get('included', [])
+    for resource in included:
+        if resource.get('type') == 'artists':
+            name = resource.get('attributes', {}).get('name')
+            if name:
+                artists.append(name.strip())
+
+    # Fallback to splitting artistName if no artists found in included list
+    if not artists:
+        artist_name_str = track_data.get('data', [])[0].get('attributes', {}).get('artistName', '')
+        for artist in artist_name_str.replace("&", ",").split(","):
+            artists.append(artist.strip())
 
     info = {}
     info['item_id'] = track_data.get('data', [])[0].get('id')
@@ -270,7 +284,7 @@ def apple_music_get_track_metadata(session, item_id):
     info['explicit'] = True if track_data.get('data', [])[0].get('attributes', {}).get('contentRating') == 'explicit' else False
     info['artists'] = conv_list_format(artists)
 
-    info['album_artists'] = artists[0]
+    info['album_artists'] = artists[0] if artists else ''
 
     if album_data:
         info['copyright'] = album_data.get('data', [])[0].get('attributes', {}).get('copyright')
@@ -377,7 +391,7 @@ def apple_music_get_lyrics(session, item_id, item_type, metadata, filepath):
         if config.get('embed_lyrics'):
             return {"lyrics": merged_lyrics}
         else:
-            return False
+            return True
 
 
 def apple_music_get_webplayback_info(session, item_id):

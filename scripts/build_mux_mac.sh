@@ -2,18 +2,18 @@
 # =============================================================
 #  OnTheSpot macOS Build Multiplexer
 #  Breaks the build into discrete, resumable steps.
-#  State is tracked via .build_state/<step>.done marker files.
+#  State is tracked via build/state/<step>.done marker files.
 #  Usage:
-#    ./scripts/build_mac_mux.sh           # run all pending steps
-#    ./scripts/build_mac_mux.sh --reset   # clear state & restart
-#    ./scripts/build_mac_mux.sh --status  # show step status only
+#    ./scripts/build_mux_mac.sh           # run all pending steps
+#    ./scripts/build_mux_mac.sh --reset   # clear state & restart
+#    ./scripts/build_mux_mac.sh --status  # show step status only
 # =============================================================
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-STATE_DIR="$ROOT/.build_state"
-LOG_DIR="$ROOT/.build_logs"
+STATE_DIR="$ROOT/build/state/mac"
+LOG_DIR="$ROOT/build/logs/mac"
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 
 # Hide cursor and restore on exit
@@ -95,7 +95,7 @@ print_dashboard() {
   local completed_steps=0
   for s in "${STEPS[@]}"; do
     if [ "$(step_status "$s")" = "done" ]; then
-      ((completed_steps++))
+      completed_steps=$(( completed_steps + 1 ))
     fi
   done
 
@@ -143,7 +143,7 @@ print_dashboard() {
 
     printf "  ${color}${BOLD}%s${RESET}  ${color}%-3s %s%s${RESET}\033[K\n" "$icon" "$i." "$label" "$duration_str"
     if [ "$s" = "$active" ]; then
-      echo -e "       ${DIM}└─ log: .build_logs/${s}.log${RESET}\033[K"
+      echo -e "       ${DIM}└─ log: build/logs/${s}.log${RESET}\033[K"
       local clean_line=""
       if [ -f "$LOG_DIR/${s}.log" ]; then
         local last_line
@@ -158,7 +158,7 @@ print_dashboard() {
         printf "          ${DIM}▶  waiting...${RESET}\033[K\n"
       fi
     fi
-    (( i++ ))
+    i=$(( i + 1 ))
   done
   echo -e "\033[K"
   # Clear any remaining lines below the dashboard
@@ -169,8 +169,8 @@ print_dashboard() {
 
 run_env_setup() {
   local log="$LOG_DIR/env_setup.log"
-  rm -f "$ROOT/dist/OnTheSpotRebuilt.tar.gz"
-  mkdir -p "$ROOT/build" "$ROOT/dist" "$ROOT/builder"
+  rm -f "$ROOT/build/dist/OnTheSpotRebuilt.tar.gz"
+  mkdir -p "$ROOT/build/dist" "$ROOT/build/deps" "$ROOT/build/state" "$ROOT/build/logs"
   python3 -m venv "$ROOT/venv" >> "$log" 2>&1
 }
 
@@ -182,12 +182,12 @@ run_pip_install() {
 
 run_ffmpeg() {
   local log="$LOG_DIR/ffmpeg.log"
-  if [ -f "$ROOT/dist/ffmpeg" ]; then
+  if [ -f "$ROOT/build/deps/ffmpeg" ]; then
     echo "ffmpeg binary already present, skipping build." >> "$log"
     return 0
   fi
 
-  mkdir -p "$ROOT/build" "$ROOT/dist" "$ROOT/builder"
+  mkdir -p "$ROOT/build/dist" "$ROOT/build/deps"
 
   # Attempt to use local/brew ffmpeg first if not forced to build
   local use_brew=1
@@ -206,10 +206,10 @@ run_ffmpeg() {
     fi
 
     if [ -n "$brew_ffmpeg" ]; then
-      echo "Found local/brew ffmpeg at $brew_ffmpeg, copying to dist/ffmpeg..." >> "$log"
+      echo "Found local/brew ffmpeg at $brew_ffmpeg, copying to build/deps/ffmpeg..." >> "$log"
       # cp without options dereferences symlinks, copying the actual binary file
-      cp "$brew_ffmpeg" "$ROOT/dist/ffmpeg" >> "$log" 2>&1
-      chmod +x "$ROOT/dist/ffmpeg"
+      cp "$brew_ffmpeg" "$ROOT/build/deps/ffmpeg" >> "$log" 2>&1
+      chmod +x "$ROOT/build/deps/ffmpeg"
       return 0
     fi
   else
@@ -218,38 +218,38 @@ run_ffmpeg() {
 
   if uname -m | grep -q x86_64; then
     # Intel: download pre-built binary
-    curl -L -o "$ROOT/build/ffmpeg.zip" \
+    curl -L -o "$ROOT/build/deps/ffmpeg.zip" \
       https://evermeet.cx/ffmpeg/ffmpeg-7.1.zip >> "$log" 2>&1
-    unzip "$ROOT/build/ffmpeg.zip" -d "$ROOT/dist" >> "$log" 2>&1
+    unzip "$ROOT/build/deps/ffmpeg.zip" -d "$ROOT/build/deps" >> "$log" 2>&1
   else
     # Apple Silicon: compile from source
-    curl -L -o "$ROOT/build/ffmpeg.zip" \
+    curl -L -o "$ROOT/build/deps/ffmpeg.zip" \
       https://github.com/markus-perl/ffmpeg-build-script/archive/refs/heads/master.zip \
       >> "$log" 2>&1
-    unzip "$ROOT/build/ffmpeg.zip" -d "$ROOT/builder" >> "$log" 2>&1
-    cd "$ROOT/builder/ffmpeg-build-script-master"
+    unzip "$ROOT/build/deps/ffmpeg.zip" -d "$ROOT/build/deps" >> "$log" 2>&1
+    cd "$ROOT/build/deps/ffmpeg-build-script-master"
     ./build-ffmpeg --build --skip-install >> "$log" 2>&1
-    cp workspace/bin/ffmpeg "$ROOT/dist/ffmpeg" || true
+    cp workspace/bin/ffmpeg "$ROOT/build/deps/ffmpeg" || true
     cd "$ROOT"
   fi
-  if [ ! -f "$ROOT/dist/ffmpeg" ]; then
+  if [ ! -f "$ROOT/build/deps/ffmpeg" ]; then
     echo "ERROR: ffmpeg was not built successfully!" >> "$log"
     return 1
   fi
-  chmod +x "$ROOT/dist/ffmpeg"
+  chmod +x "$ROOT/build/deps/ffmpeg"
 }
 
 run_pyinstaller() {
   local log="$LOG_DIR/pyinstaller.log"
   source "$ROOT/venv/bin/activate"
 
-  mkdir -p "$ROOT/build" "$ROOT/dist"
+  mkdir -p "$ROOT/build/dist"
 
   local FFBIN=""
-  if [ -f "$ROOT/dist/ffmpeg" ]; then
-    FFBIN="--add-binary=$ROOT/dist/ffmpeg:onthespot/bin/ffmpeg"
+  if [ -f "$ROOT/build/deps/ffmpeg" ]; then
+    FFBIN="--add-binary=$ROOT/build/deps/ffmpeg:onthespot/bin/ffmpeg"
   else
-    echo "WARNING: dist/ffmpeg not found — bundling without ffmpeg." >> "$log"
+    echo "WARNING: build/deps/ffmpeg not found — bundling without ffmpeg." >> "$log"
   fi
 
   pyinstaller --windowed --noconfirm \
@@ -264,35 +264,35 @@ run_pyinstaller() {
     --name="OnTheSpotRebuilt" \
     --icon="$ROOT/src/onthespot/resources/icons/onthespot.png" \
     "$ROOT/src/portable.py" \
-    --distpath "$ROOT/dist" \
-    --workpath "$ROOT/build" \
-    --specpath "$ROOT" \
+    --distpath "$ROOT/build/dist" \
+    --workpath "$ROOT/build/pyinstaller_work" \
+    --specpath "$ROOT/build" \
     >> "$log" 2>&1
 }
 
 run_package_dmg() {
   local log="$LOG_DIR/package_dmg.log"
-  if [ ! -d "$ROOT/dist/OnTheSpotRebuilt.app" ]; then
+  if [ ! -d "$ROOT/build/dist/OnTheSpotRebuilt.app" ]; then
     echo "ERROR: OnTheSpotRebuilt.app not found! PyInstaller must have failed silently." >> "$log"
     return 1
   fi
-  chmod +x "$ROOT/dist/OnTheSpotRebuilt.app" >> "$log" 2>&1
-  mkdir -p "$ROOT/dist/dmg"
+  chmod +x "$ROOT/build/dist/OnTheSpotRebuilt.app" >> "$log" 2>&1
+  mkdir -p "$ROOT/build/dist/dmg"
   # Clean up any previous dmg staging
-  chmod -R +w "$ROOT/dist/dmg/OnTheSpotRebuilt.app" 2>/dev/null || true
-  chflags -R nouchg "$ROOT/dist/dmg/OnTheSpotRebuilt.app" 2>/dev/null || true
+  chmod -R +w "$ROOT/build/dist/dmg/OnTheSpotRebuilt.app" 2>/dev/null || true
+  chflags -R nouchg "$ROOT/build/dist/dmg/OnTheSpotRebuilt.app" 2>/dev/null || true
   
-  local trash_app="$ROOT/dist/dmg/OnTheSpotRebuilt.app.trash.$$."
-  if mv "$ROOT/dist/dmg/OnTheSpotRebuilt.app" "$trash_app" 2>/dev/null; then
+  local trash_app="$ROOT/build/dist/dmg/OnTheSpotRebuilt.app.trash.$$."
+  if mv "$ROOT/build/dist/dmg/OnTheSpotRebuilt.app" "$trash_app" 2>/dev/null; then
     rm -rf "$trash_app" 2>/dev/null || true
   else
-    rm -rf "$ROOT/dist/dmg/OnTheSpotRebuilt.app" 2>/dev/null || true
+    rm -rf "$ROOT/build/dist/dmg/OnTheSpotRebuilt.app" 2>/dev/null || true
   fi
-  rm -rf "$ROOT/dist/dmg/Applications"
-  mv "$ROOT/dist/OnTheSpotRebuilt.app" "$ROOT/dist/dmg/OnTheSpotRebuilt.app" || return 1
-  ln -s /Applications "$ROOT/dist/dmg/Applications"
+  rm -rf "$ROOT/build/dist/dmg/Applications"
+  mv "$ROOT/build/dist/OnTheSpotRebuilt.app" "$ROOT/build/dist/dmg/OnTheSpotRebuilt.app" || return 1
+  ln -s /Applications "$ROOT/build/dist/dmg/Applications"
 
-  cat > "$ROOT/dist/dmg/readme.txt" <<'EOF'
+  cat > "$ROOT/build/dist/dmg/readme.txt" <<'EOF'
 # Login Issues
 Newer versions of macOS have restricted networking features
 for apps inside the 'Applications' folder. To login to your
@@ -313,14 +313,14 @@ open the 'Applications' folder, right-click the app, and
 click "Open Anyway".
 EOF
 
-  rm -f "$ROOT/dist/OnTheSpotRebuilt.dmg"
-  hdiutil create -srcfolder "$ROOT/dist/dmg" \
-    -format UDZO -o "$ROOT/dist/OnTheSpotRebuilt.dmg" >> "$log" 2>&1
+  rm -f "$ROOT/build/dist/OnTheSpotRebuilt.dmg"
+  hdiutil create -srcfolder "$ROOT/build/dist/dmg" \
+    -format UDZO -o "$ROOT/build/dist/OnTheSpotRebuilt.dmg" >> "$log" 2>&1
 }
 
 run_cleanup() {
   local log="$LOG_DIR/cleanup.log"
-  rm -rf "$ROOT/__pycache__" "$ROOT/build" "$ROOT/builder" "$ROOT"/*.spec \
+  rm -rf "$ROOT/__pycache__" "$ROOT/build/pyinstaller_work" "$ROOT/build/deps/ffmpeg-build-script-master" "$ROOT/build/deps/ffmpeg.zip" "$ROOT/build"/*.spec "$ROOT/build/dist/dmg" \
     >> "$log" 2>&1
 }
 
@@ -332,7 +332,7 @@ run_step() {
 
   print_dashboard "$step" "▘" "0"
   echo -e "  ${CYAN}Running: $(get_step_label "$step")${RESET}\033[K"
-  echo -e "  ${DIM}Tail log: tail -f .build_logs/${step}.log${RESET}\033[K"
+  echo -e "  ${DIM}Tail log: tail -f build/logs/${step}.log${RESET}\033[K"
   echo -e "\033[K"
 
   rm -f "$STATE_DIR/$step.failed" "$STATE_DIR/$step.time"
@@ -357,7 +357,7 @@ run_step() {
     local elapsed=$(( $(date +%s) - start_time ))
     print_dashboard "$step" "$frame" "$elapsed"
     echo -e "  ${CYAN}Running: $(get_step_label "$step")${RESET}\033[K"
-    echo -e "  ${DIM}Tail log: tail -f .build_logs/${step}.log${RESET}\033[K"
+    echo -e "  ${DIM}Tail log: tail -f build/logs/${step}.log${RESET}\033[K"
     echo -e "\033[K"
     sleep 0.1
   done
@@ -381,9 +381,9 @@ run_step() {
     mark_failed "$step"
     print_dashboard
     echo -e "\033[K\n  ${RED}✘ FAILED: $(get_step_label "$step") (${duration}s)${RESET}\033[K"
-    echo -e "  ${DIM}Last 5 lines of .build_logs/${step}.log:${RESET}\033[K"
+    echo -e "  ${DIM}Last 5 lines of build/logs/${step}.log:${RESET}\033[K"
     tail -n 5 "$LOG_DIR/${step}.log" | sed 's/^/    /' | sed 's/$/\x1b[K/'
-    echo -e "\033[K\n  ${DIM}See full log: .build_logs/${step}.log${RESET}\033[K"
+    echo -e "\033[K\n  ${DIM}See full log: build/logs/${step}.log${RESET}\033[K"
     exit 1
   fi
 }
@@ -483,8 +483,8 @@ verify_dmg_mode_requirements() {
   fi
 
   # Step 3: Build / acquire ffmpeg binary
-  if [ ! -f "$ROOT/dist/ffmpeg" ]; then
-    echo -e "  ${RED}✘ Step 3 Verification Failed: ffmpeg binary is missing at $ROOT/dist/ffmpeg.${RESET}"
+  if [ ! -f "$ROOT/build/deps/ffmpeg" ]; then
+    echo -e "  ${RED}✘ Step 3 Verification Failed: ffmpeg binary is missing at $ROOT/build/deps/ffmpeg.${RESET}"
     failed=1
   else
     echo -e "  ${GREEN}✔ Step 3 Verification Passed: ffmpeg binary exists.${RESET}"
@@ -493,7 +493,7 @@ verify_dmg_mode_requirements() {
   if [ $failed -eq 1 ]; then
     echo -e "\n${YELLOW}Prerequisites for DMG build mode are missing.${RESET}"
     echo -e "Please run the script without the ${BOLD}--dmg${RESET} flag first to initialize the environment and download dependencies:"
-    echo -e "  ${CYAN}./scripts/build_mac_mux.sh${RESET}\n"
+    echo -e "  ${CYAN}./scripts/build_mux_mac.sh${RESET}\n"
     exit 1
   fi
   echo -e "${GREEN}Verification successful! Skipping steps 1-3.${RESET}\n"
@@ -501,9 +501,9 @@ verify_dmg_mode_requirements() {
 
 check_overwrite_dist() {
   local has_rebuildable=0
-  if [ -d "$ROOT/dist" ]; then
+  if [ -d "$ROOT/build/dist" ]; then
     for name in "OnTheSpotRebuilt.app" "OnTheSpotRebuilt" "OnTheSpotRebuilt.dmg" "dmg"; do
-      if [ -e "$ROOT/dist/$name" ]; then
+      if [ -e "$ROOT/build/dist/$name" ]; then
         has_rebuildable=1
         break
       fi
@@ -513,14 +513,14 @@ check_overwrite_dist() {
   if [ "$has_rebuildable" -eq 1 ]; then
     # Make sure cursor is visible for prompt
     printf "\033[?25h"
-    echo -e "${YELLOW}Warning: Build output directory 'dist/' contains existing build outputs that will be replaced.${RESET}"
+    echo -e "${YELLOW}Warning: Build output directory 'build/dist/' contains existing build outputs that will be replaced.${RESET}"
     read -p "Overwrite and replace the built DMG/app? (y/n): " confirm
     # Re-hide cursor
     printf "\033[?25l"
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
-      echo -e "${YELLOW}Cleaning existing build outputs from dist/...${RESET}"
+      echo -e "${YELLOW}Cleaning existing build outputs from build/dist/...${RESET}"
       for name in "OnTheSpotRebuilt.app" "OnTheSpotRebuilt" "OnTheSpotRebuilt.dmg" "dmg"; do
-        local item="$ROOT/dist/$name"
+        local item="$ROOT/build/dist/$name"
         if [ -e "$item" ]; then
           chmod -R +w "$item" 2>/dev/null || true
           chflags -R nouchg "$item" 2>/dev/null || true
@@ -570,4 +570,4 @@ for step in "${STEPS[@]}"; do
 done
 
 print_dashboard
-echo -e "${BOLD}${GREEN}Build complete! → dist/OnTheSpotRebuilt.dmg${RESET}\n"
+echo -e "${BOLD}${GREEN}Build complete! → build/dist/OnTheSpotRebuilt.dmg${RESET}\n"
