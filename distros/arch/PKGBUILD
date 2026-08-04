@@ -1,26 +1,26 @@
-pkgname=onthespot-git
+pkgname=onthespot-rebuilt-git
 pkgver=1.1.4
-_branch="master"
+_branch="main"
 pkgrel=1
-pkgdesc="Qt based music downloader written in python"
+pkgdesc="Qt based music downloader written in python (OnTheSpotRebuilt fork)"
 arch=('any')
-url="https://github.com/justin025/onthespot"
+url="https://github.com/john20xdoe/onthespot-fork"
 license=('GPLv2')
 depends=('ffmpeg' 'python-requests' 'python_urllib3' 'python-musictag' 'python-mutagen' 'python-pyqt6' 'python-pillow' 'python-librespot' 'yt-dlp' 'python-flask' 'python-flask-login' 'python-m3u8' 'python-pywidevine')
-conflicts=('onthespot')
-provides=('onthespot')
+conflicts=('onthespot' 'onthespot-git')
+provides=('onthespot-rebuilt')
 makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
 optdepends=()
-source=("https://github.com/justin025/onthespot/archive/refs/heads/$_branch.zip")
+source=("https://github.com/john20xdoe/onthespot-fork/archive/refs/heads/$_branch.zip")
 sha256sums=(SKIP)
 
 build() {
-  cd "onthespot-$_branch"
+  cd "onthespot-fork-$_branch"
   python -m build --wheel --no-isolation
 }
 
 package() {
-  cd "onthespot-$_branch"
+  cd "onthespot-fork-$_branch"
   python -m installer --destdir="$pkgdir" dist/*.whl
   install -dm 755 "$pkgdir/usr/share/applications"
   install -dm 755 "$pkgdir/usr/share/icons/hicolor/"{256x256,scalable}"/apps/"
