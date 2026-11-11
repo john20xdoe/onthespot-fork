@@ -72,6 +72,10 @@ def load_config(self):
     self.btn_download_tmp_browse.setIcon(self.get_icon('folder'))
     self.btn_search.setIcon(self.get_icon('search'))
     self.btn_download_filter_toggle.setIcon(self.get_icon('collapse_up'))
+    if hasattr(self, 'btn_toggle_tmp_dl'):
+        self.btn_toggle_tmp_dl.setIcon(self.get_icon('collapse_down'))
+    if hasattr(self, 'btn_open_download_dir'):
+        self.btn_open_download_dir.setIcon(self.get_icon('folder'))
 
     # Disable scrolling to change values of QSpinBoxes and QComboBoxes
     do_not_scroll = [
