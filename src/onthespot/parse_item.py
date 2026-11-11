@@ -162,10 +162,14 @@ def parse_url(url):
 
 def parsingworker():
     while True:
+        local_id = item = item_id = None
         if parsing:
             try:
-                item_id = next(iter(parsing))
                 with parsing_lock:
+                    if not parsing:
+                        time.sleep(0.2)
+                        continue
+                    item_id = next(iter(parsing))
                     item = parsing.pop(item_id)
                 logger.info(f"Parsing: {item}")
 
@@ -235,7 +239,7 @@ def parsingworker():
                         continue
 
                 if current_service == 'youtube_music' and current_type == 'artist':
-                    track_ids = youtube_get_channel_track_ids(token, current_id)
+                    track_ids = youtube_music_get_channel_track_ids(token, current_id)
                     for track_id in track_ids:
                         local_id = format_local_id(track_id)
                         with pending_lock:
@@ -246,7 +250,6 @@ def parsingworker():
                                 'item_id': track_id,
                                 'parent_category': 'album'
                                 }
-                        continue
                     continue
 
                 if current_type in ["track", "podcast_episode", "movie", "episode"]:
@@ -329,6 +332,9 @@ def parsingworker():
                     continue
             except Exception as e:
                 logger.error(f"Unknown Exception: {str(e)}\nTraceback: {traceback.format_exc()}")
+                if item_id is not None and item is not None:
+                    with parsing_lock:
+                        parsing[item_id] = item
                 continue
         else:
             time.sleep(0.2)

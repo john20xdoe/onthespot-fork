@@ -51,8 +51,12 @@ class FillAccountPool(QThread):
 
 def get_account_token(item_service, rotate=False):
     if item_service in ('bandcamp', 'youtube_music', 'generic'):
-        return
+        return None
+    if not account_pool:
+        return None
     parsing_index = config.get('active_account_number')
+    if not isinstance(parsing_index, int) or parsing_index < 0 or parsing_index >= len(account_pool):
+        parsing_index = 0
     if item_service == account_pool[parsing_index]['service'] and not rotate:
         return globals()[f"{item_service}_get_token"](parsing_index)
     else:

@@ -30,7 +30,8 @@ class SSLAdapter(requests.adapters.HTTPAdapter):
 
 def make_call(url, params=None, headers=None, session=None, skip_cache=False, text=False, use_ssl=False):
     if not skip_cache:
-        request_key = md5(f'{url}'.encode()).hexdigest()
+        cache_raw = f"{url}?{json.dumps(params, sort_keys=True)}" if params else str(url)
+        request_key = md5(cache_raw.encode()).hexdigest()
         req_cache_file = os.path.join(config.get('_cache_dir'), 'reqcache', request_key + '.json')
         os.makedirs(os.path.dirname(req_cache_file), exist_ok=True)
         if os.path.isfile(req_cache_file):
@@ -81,10 +82,11 @@ def is_latest_release():
     url = "https://api.github.com/repos/john20xdoe/onthespot-fork/releases/latest"
     response = requests.get(url)
     if response.status_code == 200:
-        current_version = config.get("version").replace('v', '').replace('.', '')
-        latest_version = response.json()['name'].replace('v', '').replace('.', '')
-        if int(latest_version) > int(current_version):
-            logger.info(f"Update Available: {int(latest_version)} > {int(current_version)}")
+        current_version = tuple(int(x) for x in re.findall(r'\d+', str(config.get("version", "0"))))
+        latest_name = response.json().get('name') or response.json().get('tag_name', '')
+        latest_version = tuple(int(x) for x in re.findall(r'\d+', str(latest_name)))
+        if latest_version > current_version:
+            logger.info(f"Update Available: {latest_version} > {current_version}")
             return False
     return True
 
@@ -366,7 +368,7 @@ def embed_metadata(item, metadata):
                 command += ['-metadata', 'date={}'.format(value)]
 
             elif key in ['discnumber', 'disc_number', 'disknumber', 'disk_number'] and config.get("embed_discnumber"):
-                if filetype in ['m4a', 'mp4', 'mov']:
+                if filetype in ['.m4a', '.mp4', '.mov']:
                     command += ['-metadata', 'disk={}/{}'.format(value, metadata['total_discs'])]
                 elif filetype in ['.flac', '.ogg', '.opus']:
                     command += ['-metadata', 'discnumber={}'.format(value)]
@@ -439,7 +441,7 @@ def embed_metadata(item, metadata):
             elif key == 'bpm' and config.get("embed_bpm"):
                 if filetype == '.mp3':
                     command += ['-metadata', 'TBPM={}'.format(value)]
-                elif filetype in ['m4a', 'mp4', 'mov']:
+                elif filetype in ['.m4a', '.mp4', '.mov']:
                     command += ['-metadata', 'tmpo={}'.format(value)]
                 else:
                     command += ['-metadata', 'bpm={}'.format(value)]
@@ -588,7 +590,7 @@ def set_music_thumbnail(filename, metadata):
                 #else:
                 command += [
                     '-i', image_path, '-map', '0:a', '-map', '1:v', '-c', 'copy', '-disposition:v:0', 'attached_pic',
-                    '-metadata:s:v', 'title=Cover', '-metadata:s:v', 'comment=Cover (front), -id3v2_version 1'
+                    '-metadata:s:v', 'title=Cover', '-metadata:s:v', 'comment=Cover (front)'
                     ]
 
                 command += [filename]

@@ -45,25 +45,24 @@ class RetryWorker(QObject):
         while self.is_running:
             if download_queue:
                 with download_queue_lock:
-                    for local_id in download_queue.keys():
+                    for local_id in list(download_queue.keys()):
                         logger.debug(f'Retrying : {local_id}')
                         if download_queue[local_id]['item_status'] == "Failed":
                             if resume_event.is_set():
                                 download_queue[local_id]['item_status'] = "Waiting"
                                 download_queue[local_id]['available'] = True
                                 if self.gui:
-                                    download_queue[local_id]['gui']['status_label'].setText(self.tr("Waiting"))
+                                    self.progress.emit(download_queue[local_id], "Waiting", 0)
                             else:
                                 download_queue[local_id]['item_status'] = "Paused"
                                 download_queue[local_id]['available'] = False
                                 if self.gui:
-                                    download_queue[local_id]['gui']['status_label'].setText(self.tr("Paused"))
-                            if self.gui:
-                                if "btn" in download_queue[local_id]['gui']:
-                                    download_queue[local_id]['gui']["btn"]['cancel'].show()
-                                    download_queue[local_id]['gui']["btn"]['retry'].hide()
-            if config.get('retry_worker_delay') > 0:
-                time.sleep(config.get('retry_worker_delay') * 60)
+                                    self.progress.emit(download_queue[local_id], "Paused", 0)
+            delay = max(config.get('retry_worker_delay', 10), 1) * 60
+            elapsed = 0
+            while self.is_running and elapsed < delay:
+                time.sleep(0.5)
+                elapsed += 0.5
             continue
 
 
@@ -93,7 +92,7 @@ class DownloadWorker(QObject):
                 local_id = item['local_id']
                 del download_queue[local_id]
                 download_queue[local_id] = item
-                download_queue[local_id]['available'] = True
+                download_queue[local_id]['available'] = (item.get('item_status') == 'Waiting')
             except (KeyError):
                 # Item likely cleared from queue
                 return
@@ -141,7 +140,8 @@ class DownloadWorker(QObject):
                         "Unavailable",
                         "Downloaded",
                         "Already Exists",
-                        "Deleted"
+                        "Deleted",
+                        "Paused"
                     ):
                         time.sleep(0.2)
                         self.readd_item_to_download_queue(item)
@@ -399,6 +399,7 @@ class DownloadWorker(QObject):
                             if self.gui:
                                 self.progress.emit(item, self.tr("Failed"), 0)
                             self.readd_item_to_download_queue(item)
+                            continue
 
                     elif item_service in ("soundcloud", "tidal", "youtube_music"):
                         item_url = item_metadata['item_url']
@@ -486,6 +487,10 @@ class DownloadWorker(QObject):
 
                         if not stream_url:
                             logger.error(f'Apple music playback info invalid: {webplayback_info}')
+                            item['item_status'] = "Failed"
+                            if self.gui:
+                                self.progress.emit(item, self.tr("Failed"), 0)
+                            self.readd_item_to_download_queue(item)
                             continue
 
                         decryption_key = apple_music_get_decryption_key(token, stream_url, item_id)

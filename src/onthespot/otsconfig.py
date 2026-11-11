@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 
 
@@ -290,6 +291,19 @@ class Config:
         return value
 
 
+    def is_editable_setting(self, key):
+        return (
+            isinstance(key, str)
+            and not key.startswith('_')
+            and key in self.__template_data
+            and key not in {'accounts', 'version', 'total_downloaded_items', 'total_downloaded_data'}
+        )
+
+
+    def get_template_default(self, key):
+        return self.__template_data.get(key)
+
+
     def save(self):
         os.makedirs(os.path.dirname(self.__cfg_path), exist_ok=True)
         for key in list(set(self.__template_data).difference(set(self.__config))):
@@ -306,7 +320,9 @@ class Config:
 
 
     def migration(self):
-        if int(self.get('version').replace('v', '').replace('.', '')) < int(self.__template_data.get('version').replace('v', '').replace('.', '')):
+        cur_v = tuple(int(x) for x in re.findall(r'\d+', str(self.get('version', '0'))))
+        tmpl_v = tuple(int(x) for x in re.findall(r'\d+', str(self.__template_data.get('version', '0'))))
+        if cur_v < tmpl_v:
 
             old_config_path = os.path.join(config_dir(), 'config.json')
             if os.path.exists(old_config_path):
@@ -331,7 +347,7 @@ class Config:
             self.set('accounts', cfg_copy)
 
             # Migration (>v1.0.7)
-            if int(self.get('version').replace('v', '').replace('.', '')) < 110:
+            if cur_v < (1, 1, 0):
                 updated_keys = [
                     ('active_account_number', 'parsing_acc_sn'),
                     ('thumbnail_size', 'search_thumb_height'),

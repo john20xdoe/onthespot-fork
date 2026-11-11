@@ -47,10 +47,10 @@ class TestLayoutStandardization(unittest.TestCase):
         self.assertEqual(tbl_dl_progress.columnCount(), 7, f"Expected 7 columns, found {tbl_dl_progress.columnCount()}")
 
     def test_search_results_table_columns(self):
-        # Verify that the search results table column count is 5
+        # Verify that the search results table column count is 4
         tbl_search_results = self.window.findChild(QtWidgets.QTableWidget, "tbl_search_results")
         self.assertIsNotNone(tbl_search_results, "tbl_search_results not found")
-        self.assertEqual(tbl_search_results.columnCount(), 5, f"Expected 5 columns, found {tbl_search_results.columnCount()}")
+        self.assertEqual(tbl_search_results.columnCount(), 4, f"Expected 4 columns, found {tbl_search_results.columnCount()}")
 
     def test_save_reset_buttons(self):
         # Verify that save/reset buttons exist under new parent container

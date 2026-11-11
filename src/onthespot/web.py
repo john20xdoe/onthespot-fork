@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 import traceback
-from flask import Flask, jsonify, render_template, redirect, request, send_file, url_for, flash, Response
+from flask import Flask, jsonify, render_template, redirect, request, send_file, send_from_directory, url_for, flash, Response
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from .accounts import FillAccountPool, get_account_token
 from .api.apple_music import apple_music_get_track_metadata, apple_music_add_account
@@ -25,7 +25,7 @@ from .api.generic import generic_add_account
 from .downloader import DownloadWorker, RetryWorker
 from .otsconfig import cache_dir, config_dir, config
 from .parse_item import parsingworker, parse_url
-from .runtimedata import get_logger, account_pool, pending, download_queue, download_queue_lock, pending_lock
+from .runtimedata import get_logger, account_pool, pending, download_queue, download_queue_lock, pending_lock, parsing, parsing_lock
 from .search import get_search_results
 from .utils import format_bytes
 
@@ -44,39 +44,41 @@ class QueueWorker(threading.Thread):
 
     def run(self):
         while True:
+            local_id = item = None
             try:
-                if pending:
+                with pending_lock:
+                    if not pending:
+                        time.sleep(0.2)
+                        continue
                     local_id = next(iter(pending))
-                    with pending_lock:
-                        item = pending.pop(local_id)
-                    token = get_account_token(item['item_service'])
-                    item_metadata = globals()[f"{item['item_service']}_get_{item['item_type']}_metadata"](token, item['item_id'])
-                    if item_metadata:
-                        with download_queue_lock:
-                            download_queue[local_id] = {
-                                'local_id': local_id,
-                                'available': True,
-                                "item_service": item["item_service"],
-                                "item_type": item["item_type"],
-                                'item_id': item['item_id'],
-                                'item_status': 'Waiting',
-                                "file_path": None,
-                                "item_name": item_metadata["title"],
-                                "item_by": item_metadata["artists"],
-                                'parent_category': item['parent_category'],
-                                'playlist_name': item.get('playlist_name'),
-                                'playlist_by': item.get('playlist_by'),
-                                'playlist_number': item.get('playlist_number'),
-                                'item_thumbnail': item_metadata["image_url"],
-                                'item_url': item_metadata["item_url"],
-                                'progress': 0
-                            }
-                else:
-                    time.sleep(0.2)
+                    item = pending.pop(local_id)
+                token = get_account_token(item['item_service'])
+                item_metadata = globals()[f"{item['item_service']}_get_{item['item_type']}_metadata"](token, item['item_id'])
+                if item_metadata:
+                    with download_queue_lock:
+                        download_queue[local_id] = {
+                            'local_id': local_id,
+                            'available': True,
+                            "item_service": item["item_service"],
+                            "item_type": item["item_type"],
+                            'item_id': item['item_id'],
+                            'item_status': 'Waiting',
+                            "file_path": None,
+                            "item_name": item_metadata["title"],
+                            "item_by": item_metadata["artists"],
+                            'parent_category': item['parent_category'],
+                            'playlist_name': item.get('playlist_name'),
+                            'playlist_by': item.get('playlist_by'),
+                            'playlist_number': item.get('playlist_number'),
+                            'item_thumbnail': item_metadata["image_url"],
+                            'item_url': item_metadata["item_url"],
+                            'progress': 0
+                        }
             except Exception as e:
                 logger.error(f"Unknown Exception for {item}: {str(e)}\nTraceback: {traceback.format_exc()}")
-                with pending_lock:
-                    pending[local_id] = item
+                if local_id is not None and item is not None:
+                    with pending_lock:
+                        pending[local_id] = item
 
 class User(UserMixin):
     def __init__(self, id):
@@ -117,8 +119,7 @@ def logout():
 
 @app.route('/icons/<path:filename>')
 def serve_icons(filename):
-    icon_path = os.path.join(config.app_root, 'resources', 'icons', filename)
-    return send_file(icon_path)
+    return send_from_directory(os.path.join(config.app_root, 'resources', 'icons'), filename)
 
 
 @app.route('/')
@@ -188,12 +189,13 @@ def search_results():
 @app.route('/api/clear_items', methods=['POST'])
 @login_required
 def clear_items():
-    keys_to_delete = []
-    for local_id, item in download_queue.items():
-        if item["item_status"] in ("Downloaded", "Already Exists", "Cancelled", "Unavailable", "Deleted"):
-            keys_to_delete.append(local_id)
-    for key in keys_to_delete:
-        del download_queue[key]
+    with download_queue_lock:
+        keys_to_delete = []
+        for local_id, item in download_queue.items():
+            if item["item_status"] in ("Downloaded", "Already Exists", "Cancelled", "Unavailable", "Deleted"):
+                keys_to_delete.append(local_id)
+        for key in keys_to_delete:
+            del download_queue[key]
     return jsonify(success=True)
 
 
@@ -204,9 +206,9 @@ def cancel_items():
         parsing.clear()
     with pending_lock:
         pending.clear()
-    for local_id, item in download_queue.items():
-        if item["item_status"] == "Waiting":
-            with download_queue_lock:
+    with download_queue_lock:
+        for local_id, item in download_queue.items():
+            if item["item_status"] == "Waiting":
                 download_queue[local_id]['item_status'] = 'Cancelled'
     return jsonify(success=True)
 
@@ -214,10 +216,11 @@ def cancel_items():
 @app.route('/api/retry_items', methods=['POST'])
 @login_required
 def retry_items():
-    for local_id, item in download_queue.items():
-        if item["item_status"] in ("Failed", "Cancelled"):
-            with download_queue_lock:
+    with download_queue_lock:
+        for local_id, item in download_queue.items():
+            if item["item_status"] in ("Failed", "Cancelled"):
                 download_queue[local_id]['item_status'] = 'Waiting'
+                download_queue[local_id]['available'] = True
     return jsonify(success=True)
 
 
@@ -226,8 +229,9 @@ def retry_items():
 def restart():
     logger.info("Caching Download Queue...")
     with open(os.path.join(cache_dir(), 'cached_download_queue.txt'), 'w') as file:
-        for local_id, item in download_queue.items():
-            file.write(item['item_url'] + '\n')
+        with download_queue_lock:
+            for local_id, item in download_queue.items():
+                file.write(item['item_url'] + '\n')
     logger.info("Restarting...")
     subprocess.Popen([sys.executable, '-m', 'onthespot.web'] + (sys.argv[1:]))
     os._exit(0)
@@ -242,14 +246,19 @@ def get_items():
 @app.route('/api/cancel/<path:local_id>', methods=['POST'])
 @login_required
 def cancel_item(local_id):
-    download_queue[local_id]['item_status'] = 'Cancelled'
+    with download_queue_lock:
+        if local_id in download_queue:
+            download_queue[local_id]['item_status'] = 'Cancelled'
     return jsonify(success=True)
 
 
 @app.route('/api/retry/<path:local_id>', methods=['POST'])
 @login_required
 def retry_item(local_id):
-    download_queue[local_id]['item_status'] = 'Waiting'
+    with download_queue_lock:
+        if local_id in download_queue:
+            download_queue[local_id]['item_status'] = 'Waiting'
+            download_queue[local_id]['available'] = True
     return jsonify(success=True)
 
 
@@ -271,20 +280,29 @@ def parse_download(url):
 @app.route('/api/delete/<path:local_id>', methods=['DELETE'])
 @login_required
 def delete_media(local_id):
-    os.remove(download_queue[local_id]['file_path'])
-    download_queue[local_id]['item_status'] = 'Deleted'
+    with download_queue_lock:
+        if local_id in download_queue:
+            file_path = download_queue[local_id].get('file_path')
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+            download_queue[local_id]['item_status'] = 'Deleted'
     return jsonify(success=True)
 
 
 @app.route('/api/update_settings', methods=['POST'])
 @login_required
 def update_settings():
-    data = request.json
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify(success=False), 400
     for key, value in data.items():
-        if isinstance(value, str) and value.isdigit():
+        if not config.is_editable_setting(key):
+            continue
+        default_val = config.get_template_default(key)
+        if isinstance(value, str) and value.isdigit() and type(default_val) is int:
             value = int(value)
         config.set(key, value)
-        config.save()
+    config.save()
     return jsonify(success=True)
 
 

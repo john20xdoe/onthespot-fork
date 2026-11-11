@@ -353,7 +353,7 @@ class CLI(Cmd):
             if len(parts) == 2:
                 try:
                     account_number = int(parts[1])
-                    if not isinstance(account_number, int) or account_number > len(config.get('accounts')):
+                    if not (0 <= account_number < len(config.get('accounts'))):
                         raise ValueError
                     config.set('active_account_number', account_number)
                     config.save()
@@ -368,14 +368,15 @@ class CLI(Cmd):
             parts = arg.split(maxsplit=1)
             if len(parts) == 2:
                 try:
-                    account_number = parts[1]
-                    if not isinstance(account_number, int) or account_number > len(config.get('accounts')):
+                    account_number = int(parts[1])
+                    if not (0 <= account_number < len(config.get('accounts'))):
                         raise ValueError
                     accounts = config.get('accounts').copy()
                     del accounts[account_number]
                     config.set('accounts', accounts)
                     config.save()
-                    del account_pool[account_number]
+                    if account_number < len(account_pool):
+                        del account_pool[account_number]
                     print(f"\033[32mDeleted account number: {account_number}\033[0m")
                 except ValueError:
                     print("\033[31mInvalid account number. Please enter a valid integer.\033[0m")
@@ -519,6 +520,7 @@ class CLI(Cmd):
                     for key in list(download_queue.keys()):
                         if download_queue[key]['item_status'] == 'Failed':
                             download_queue[key]['item_status'] = 'Waiting'
+                            download_queue[key]['available'] = True
         time.sleep(0.3)
         stdscr.clear()
         stdscr.refresh()
