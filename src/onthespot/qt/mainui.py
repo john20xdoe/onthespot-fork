@@ -79,14 +79,20 @@ class SearchWorker(QThread):
         super().__init__()
         self.search_term = search_term
         self.content_types = content_types
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
         
     def run(self):
         try:
             results = get_search_results(self.search_term, self.content_types)
-            self.finished.emit(results)
+            if not self._is_cancelled:
+                self.finished.emit(results)
         except Exception as e:
             logger.error(f"Search failed: {e}")
-            self.finished.emit(False)
+            if not self._is_cancelled:
+                self.finished.emit(False)
 
 
 class CategoryCellWidget(QWidget):
@@ -313,6 +319,23 @@ class MainWindow(QMainWindow):
         logger.info("Loading configurations..")
         load_config(self)
 
+        # Temporary download path accordion initial state
+        if hasattr(self, 'group_tmp_dl_details'):
+            self.group_tmp_dl_details.hide()
+        if hasattr(self, 'btn_toggle_tmp_dl'):
+            self.btn_toggle_tmp_dl.setIcon(self.get_icon('collapse_down'))
+        self.update_tmp_dl_display()
+
+        # Persist search category checkboxes on change
+        for key in (
+            'enable_search_tracks', 'enable_search_albums', 'enable_search_artists',
+            'enable_search_playlists', 'enable_search_episodes', 'enable_search_podcasts',
+            'enable_search_audiobooks'
+        ):
+            widget = getattr(self, key, None)
+            if widget:
+                widget.toggled.connect(self.save_search_category_state)
+
         self.__splash_dialog = _dialog
 
         # Start/create session builder and queue processor
@@ -511,7 +534,11 @@ class MainWindow(QMainWindow):
 
     def bind_button_inputs(self):
         # Connect button click signals
-        self.btn_search.clicked.connect(self.fill_search_table)
+        self.btn_search.clicked.connect(self.on_search_button_clicked)
+        self.search_term.textChanged.connect(self.on_search_text_changed)
+        for action in self.search_term.actions():
+            if action.objectName() == '_q_qlineeditclearaction':
+                action.triggered.connect(self.cancel_search)
 
         self.login_service.currentIndexChanged.connect(self.set_login_fields)
         self.language.currentIndexChanged.connect(self.language_change)
@@ -528,6 +555,10 @@ class MainWindow(QMainWindow):
 
         self.btn_download_tmp_browse.clicked.connect(lambda: self.select_dir(self.tmp_dl_root))
         self.tmp_dl_root.textChanged.connect(self.update_tmp_dir)
+        if hasattr(self, 'btn_toggle_tmp_dl'):
+            self.btn_toggle_tmp_dl.clicked.connect(self.toggle_tmp_dl_accordion)
+        if hasattr(self, 'btn_open_download_dir'):
+            self.btn_open_download_dir.clicked.connect(self.open_downloads_directory)
         self.search_term.returnPressed.connect(self.fill_search_table)
         self.btn_progress_clear_complete.clicked.connect(self.remove_completed_from_download_list)
 
@@ -636,11 +667,51 @@ class MainWindow(QMainWindow):
             output.setText(QDir.toNativeSeparators(path))
 
 
+    def toggle_tmp_dl_accordion(self):
+        if hasattr(self, 'group_tmp_dl_details') and hasattr(self, 'btn_toggle_tmp_dl'):
+            if self.group_tmp_dl_details.isHidden():
+                self.group_tmp_dl_details.show()
+                self.btn_toggle_tmp_dl.setIcon(self.get_icon('collapse_up'))
+            else:
+                self.group_tmp_dl_details.hide()
+                self.btn_toggle_tmp_dl.setIcon(self.get_icon('collapse_down'))
+
+
+    def update_tmp_dl_display(self):
+        if hasattr(self, 'lb_tmp_dl_current_value') and hasattr(self, 'tmp_dl_root'):
+            val = self.tmp_dl_root.text().strip()
+            if val:
+                self.lb_tmp_dl_current_value.setText(val)
+            else:
+                self.lb_tmp_dl_current_value.setText(self.tr("Default (Download directory)"))
+
+
+    def save_search_category_state(self):
+        for key in (
+            'enable_search_tracks', 'enable_search_albums', 'enable_search_artists',
+            'enable_search_playlists', 'enable_search_episodes', 'enable_search_podcasts',
+            'enable_search_audiobooks'
+        ):
+            widget = getattr(self, key, None)
+            if widget:
+                config.set(key, widget.isChecked())
+        config.save()
+
+
+    def open_downloads_directory(self):
+        dl_path = config.get('audio_download_path')
+        if not dl_path:
+            dl_path = os.path.expanduser('~/Downloads')
+        os.makedirs(dl_path, exist_ok=True)
+        open_item(dl_path)
+
+
     def update_tmp_dir(self):
         temp_download_path.clear()
-        new_path = self.tmp_dl_root.text()
+        new_path = self.tmp_dl_root.text().strip()
         if new_path:
             temp_download_path.append(new_path)
+        self.update_tmp_dl_display()
 
     def clear_cache_clicked(self):
         shutil.rmtree(os.path.join(cache_dir(), "reqcache"), ignore_errors=True)
@@ -1189,6 +1260,32 @@ class MainWindow(QMainWindow):
         self._login_finished.emit(bool(added))
 
 
+    def on_search_button_clicked(self):
+        if hasattr(self, 'search_worker') and self.search_worker.isRunning():
+            self.cancel_search()
+        else:
+            self.fill_search_table()
+
+
+    def on_search_text_changed(self, text):
+        if not text.strip() and hasattr(self, 'search_worker') and self.search_worker.isRunning():
+            self.cancel_search()
+
+
+    def cancel_search(self):
+        if hasattr(self, 'search_worker') and self.search_worker.isRunning():
+            self.search_worker.cancel()
+            try:
+                self.search_worker.finished.disconnect(self.on_search_finished)
+            except Exception:
+                pass
+            self.search_worker.terminate()
+        self.search_spinner.stop()
+        self.btn_search.setIcon(self.get_icon('search'))
+        self.btn_search.setToolTip(self.tr("Search"))
+        self.search_term.setFocus()
+
+
     def fill_search_table(self):
         if hasattr(self, 'search_worker') and self.search_worker.isRunning():
             return
@@ -1216,8 +1313,8 @@ class MainWindow(QMainWindow):
         if self.enable_search_audiobooks.isChecked():
             content_types.append('audiobook')
 
-        self.search_term.setDisabled(True)
-        self.btn_search.setDisabled(True)
+        self.btn_search.setIcon(self.get_icon('stop'))
+        self.btn_search.setToolTip(self.tr("Cancel Search"))
         self.search_spinner.start()
 
         self.search_worker = SearchWorker(search_term, content_types)
@@ -1226,8 +1323,8 @@ class MainWindow(QMainWindow):
 
     def on_search_finished(self, results):
         self.search_spinner.stop()
-        self.search_term.setDisabled(False)
-        self.btn_search.setDisabled(False)
+        self.btn_search.setIcon(self.get_icon('search'))
+        self.btn_search.setToolTip(self.tr("Search"))
         self.search_term.setFocus()
 
         if results is None:
@@ -1367,7 +1464,7 @@ class MainWindow(QMainWindow):
         delete_action = None
         download_item_action = None
         
-        if status in ('Waiting', 'Downloading', 'Paused') and progress < 100:
+        if ((status in ('Waiting', 'Downloading', 'Paused') and progress < 100) or status == 'Failed'):
             cancel_action = menu.addAction(self.get_icon('stop'), self.tr("Cancel"))
         
         if status == 'Paused':
