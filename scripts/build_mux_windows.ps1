@@ -121,7 +121,7 @@ function Show-Dashboard($activeStep, $spinnerFrame, $elapsed) {
 
         Write-Host "  $icon  $i. $label$durStr" -ForegroundColor $color
         if ($s -eq $activeStep) {
-            Write-Host "       └─ log: build\logs\$s.log" -ForegroundColor DarkGray
+            Write-Host "       └─ log: build\logs\windows\$s.log" -ForegroundColor DarkGray
             $logFile = "$LOG_DIR\$s.log"
             if (Test-Path $logFile) {
                 $lastLine = Get-Content $logFile -Tail 1 -ErrorAction SilentlyContinue

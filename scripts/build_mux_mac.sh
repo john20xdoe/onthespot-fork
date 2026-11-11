@@ -143,7 +143,7 @@ print_dashboard() {
 
     printf "  ${color}${BOLD}%s${RESET}  ${color}%-3s %s%s${RESET}\033[K\n" "$icon" "$i." "$label" "$duration_str"
     if [ "$s" = "$active" ]; then
-      echo -e "       ${DIM}└─ log: build/logs/${s}.log${RESET}\033[K"
+      echo -e "       ${DIM}└─ log: build/logs/mac/${s}.log${RESET}\033[K"
       local clean_line=""
       if [ -f "$LOG_DIR/${s}.log" ]; then
         local last_line

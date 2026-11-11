@@ -202,10 +202,12 @@ class StatusCellWidget(QWidget):
         layout.addWidget(self.lyric_label, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         self.setStyleSheet("background-color: transparent;")
 
+        self.raw_status = ""
         self.label.hide()
         self.lyric_label.hide()
 
     def update_status(self, status, progress, raw_status, item=None):
+        self.raw_status = raw_status
         upper_status = status.upper()
         self.label.setText(upper_status)
         self.pbar.setValue(progress)
@@ -287,6 +289,8 @@ class QueueWorker(QObject):
 
 
 class MainWindow(QMainWindow):
+    _login_finished = pyqtSignal(bool)
+
     def closeEvent(self, event):
         if config.get('close_to_tray') and get_init_tray():
             event.ignore()
@@ -312,24 +316,32 @@ class MainWindow(QMainWindow):
         self.__splash_dialog = _dialog
 
         # Start/create session builder and queue processor
-        fillaccountpool = FillAccountPool(gui=True)
-        fillaccountpool.finished.connect(self.session_load_done)
-        fillaccountpool.progress.connect(self.show_popup_dialog)
-        fillaccountpool.start()
+        self.fillaccountpool = FillAccountPool(gui=True)
+        self.fillaccountpool.finished.connect(self.session_load_done)
+        self.fillaccountpool.progress.connect(self.show_popup_dialog)
+        self.fillaccountpool.start()
 
+        self.queue_workers = []
         for i in range(config.get('maximum_queue_workers')):
             queueworker = QueueWorker()
             queueworker.add_item_to_download_list.connect(self.add_item_to_download_list)
             queueworker.start()
+            self.queue_workers.append(queueworker)
 
+        self.download_workers = []
         for i in range(config.get('maximum_download_workers')):
             downloadworker = DownloadWorker(gui=True)
             downloadworker.progress.connect(self.update_item_in_download_list)
             downloadworker.start()
+            self.download_workers.append(downloadworker)
 
+        self.retryworker = None
         if config.get('enable_retry_worker'):
-            retryworker = RetryWorker(gui=True)
-            retryworker.start()
+            self.retryworker = RetryWorker(gui=True)
+            self.retryworker.progress.connect(self.update_item_in_download_list)
+            self.retryworker.start()
+
+        self._login_finished.connect(self._on_account_login_finished)
 
         self.mirrorplayback = MirrorSpotifyPlayback()
         if config.get('mirror_spotify_playback'):
@@ -526,12 +538,6 @@ class MainWindow(QMainWindow):
         self.download_queue_show_failed.stateChanged.connect(self.update_table_visibility)
         self.download_queue_show_unavailable.stateChanged.connect(self.update_table_visibility)
         self.download_queue_show_cancelled.stateChanged.connect(self.update_table_visibility)
-        self.download_queue_show_completed.stateChanged.connect(self.update_table_visibility)
-
-        self.download_queue_show_waiting.stateChanged.connect(self.update_table_visibility)
-        self.download_queue_show_failed.stateChanged.connect(self.update_table_visibility)
-        self.download_queue_show_cancelled.stateChanged.connect(self.update_table_visibility)
-        self.download_queue_show_unavailable.stateChanged.connect(self.update_table_visibility)
         self.download_queue_show_completed.stateChanged.connect(self.update_table_visibility)
 
         self.mirror_spotify_playback.stateChanged.connect(self.manage_mirror_spotify_playback)
@@ -764,10 +770,6 @@ class MainWindow(QMainWindow):
         status_widget.update_status(self.tr("Paused"), 0, "Paused", item)
         pbar = status_widget.pbar
         status_label = status_widget.label
-        original_setText = status_label.setText
-        status_label.setText = lambda text: original_setText(text.upper())
-
-
 
         actions_btn = QPushButton()
         actions_btn.setIcon(self.get_icon('collapse_down'))
@@ -1152,8 +1154,8 @@ class MainWindow(QMainWindow):
         login_worker.start()
 
 
-    def add_spotify_account_worker(self):
-        if spotify_new_session():
+    def _on_account_login_finished(self, added: bool):
+        if added:
             self.show_popup_dialog(self.tr("Account added, please restart the app."))
             self.btn_login_add.setText(self.tr("Please Restart The App"))
             config.set('active_account_number', len(account_pool))
@@ -1163,6 +1165,11 @@ class MainWindow(QMainWindow):
             self.btn_login_add.setText(self.tr("Add Account"))
         self.login_service.setDisabled(False)
         self.btn_login_add.setDisabled(False)
+
+
+    def add_spotify_account_worker(self):
+        added = spotify_new_session()
+        self._login_finished.emit(bool(added))
 
 
     def add_tidal_account(self):
@@ -1178,16 +1185,8 @@ class MainWindow(QMainWindow):
 
 
     def add_tidal_account_worker(self, device_code):
-        if tidal_add_account_pt2(device_code):
-            self.show_popup_dialog(self.tr("Account added, please restart the app."))
-            self.btn_login_add.setText(self.tr("Please Restart The App"))
-            config.set('active_account_number', len(account_pool))
-            config.save()
-        else:
-            self.show_popup_dialog(self.tr("Account already exists."))
-            self.btn_login_add.setText(self.tr("Add Account"))
-        self.login_service.setDisabled(False)
-        self.btn_login_add.setDisabled(False)
+        added = tidal_add_account_pt2(device_code)
+        self._login_finished.emit(bool(added))
 
 
     def fill_search_table(self):
@@ -1314,14 +1313,15 @@ class MainWindow(QMainWindow):
         for row in range(self.tbl_dl_progress.rowCount()):
             widget = self.tbl_dl_progress.cellWidget(row, 5)  # Check the Status column
             if widget:
-                status = widget.label.text() if hasattr(widget, 'label') else widget.text()
+                raw_status = getattr(widget, 'raw_status', '')
+                if not raw_status and hasattr(widget, 'label'):
+                    raw_status = widget.label.text()
                 # Determine visibility based on checkboxes
-                if ((status == self.tr("Waiting") or status == self.tr("Paused")) and not show_waiting) or \
-                   (status == self.tr("Failed") and not show_failed) or \
-                   (status == self.tr("Unavailable") and not show_unavailable) or \
-                   (status == self.tr("Cancelled") and not show_cancelled) or \
-                   (status == self.tr("Already Exists") and not show_completed) or \
-                   (status == self.tr("Downloaded") and not show_completed):
+                if (raw_status in ("Waiting", "Paused") and not show_waiting) or \
+                   (raw_status == "Failed" and not show_failed) or \
+                   (raw_status == "Unavailable" and not show_unavailable) or \
+                   (raw_status == "Cancelled" and not show_cancelled) or \
+                   (raw_status in ("Already Exists", "Downloaded") and not show_completed):
                     self.tbl_dl_progress.hideRow(row)  # Hide the row
                 else:
                     self.tbl_dl_progress.showRow(row)  # Show the row if the status is allowed
@@ -1335,11 +1335,12 @@ class MainWindow(QMainWindow):
 
 
     def on_download_table_context_menu(self, pos):
-        item = self.tbl_dl_progress.itemAt(pos)
-        if item is not None:
-            row = item.row()
-            local_id = self.tbl_dl_progress.item(row, 0).text()
-            self.show_download_item_context_menu(local_id, self.tbl_dl_progress.viewport().mapToGlobal(pos))
+        row = self.tbl_dl_progress.rowAt(pos.y())
+        if row >= 0:
+            id_item = self.tbl_dl_progress.item(row, 0)
+            if id_item is not None:
+                local_id = id_item.text()
+                self.show_download_item_context_menu(local_id, self.tbl_dl_progress.viewport().mapToGlobal(pos))
 
 
     def show_download_item_context_menu(self, local_id, global_pos):
@@ -1529,9 +1530,8 @@ class MainWindow(QMainWindow):
 
 
     def on_search_table_context_menu(self, pos):
-        item = self.tbl_search_results.itemAt(pos)
-        if item is not None:
-            row = item.row()
+        row = self.tbl_search_results.rowAt(pos.y())
+        if row >= 0:
             col1_item = self.tbl_search_results.item(row, 1)
             if col1_item is not None:
                 result = col1_item.data(Qt.ItemDataRole.UserRole)
@@ -1552,12 +1552,13 @@ class MainWindow(QMainWindow):
             return
             
         if action == download_action:
-            parsing[result['item_id']] = {
-                'item_url': result['item_url'],
-                'item_service': result['item_service'],
-                'item_type': result['item_type'],
-                'item_id': result['item_id']
-            }
+            with parsing_lock:
+                parsing[result['item_id']] = {
+                    'item_url': result['item_url'],
+                    'item_service': result['item_service'],
+                    'item_type': result['item_type'],
+                    'item_id': result['item_id']
+                }
             self.show_popup_dialog(self.tr("{0} is being parsed and will be added to the download queue shortly.").format(f"{result['item_type'].title()}: {result['item_name']}"), download=True)
         elif action == copy_action:
             QApplication.clipboard().setText(result['item_url'])

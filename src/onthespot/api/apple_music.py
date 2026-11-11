@@ -184,6 +184,9 @@ def apple_music_get_search_results(session, search_term, content_types):
 
         if result == 'songs':
             for track in results['results']['songs']['data']:
+                artwork = track.get("attributes", {}).get("artwork")
+                artwork_url = artwork.get("url", "") if artwork else ""
+                artwork_url = artwork_url.replace("{w}", "160").replace("{h}", "160") if artwork_url else ""
                 search_results.append({
                     'item_id': track['id'],
                     'item_name': track['attributes']['name'],
@@ -191,11 +194,14 @@ def apple_music_get_search_results(session, search_term, content_types):
                     'item_type': "track",
                     'item_service': "apple_music",
                     'item_url': track['attributes']['url'],
-                    'item_thumbnail_url': track.get("attributes", {}).get("artwork", {}).get("url").replace("{w}", "160").replace("{h}", "160")
+                    'item_thumbnail_url': artwork_url
                 })
 
         if result == 'albums':
             for album in results['results']['albums']['data']:
+                artwork = album.get("attributes", {}).get("artwork")
+                artwork_url = artwork.get("url", "") if artwork else ""
+                artwork_url = artwork_url.replace("{w}", "160").replace("{h}", "160") if artwork_url else ""
                 search_results.append({
                     'item_id': album['id'],
                     'item_name': album['attributes']['name'],
@@ -203,11 +209,14 @@ def apple_music_get_search_results(session, search_term, content_types):
                     'item_type': "album",
                     'item_service': "apple_music",
                     'item_url': album['attributes']['url'],
-                    'item_thumbnail_url': album.get("attributes", {}).get("artwork", {}).get("url").replace("{w}", "160").replace("{h}", "160")
+                    'item_thumbnail_url': artwork_url
                 })
 
         if result == 'artists':
             for artist in results['results']['artists']['data']:
+                artwork = artist.get("attributes", {}).get("artwork")
+                artwork_url = artwork.get("url", "") if artwork else ""
+                artwork_url = artwork_url.replace("{w}", "160").replace("{h}", "160") if artwork_url else ""
                 search_results.append({
                     'item_id': artist['id'],
                     'item_name': artist['attributes']['name'],
@@ -215,11 +224,14 @@ def apple_music_get_search_results(session, search_term, content_types):
                     'item_type': "artist",
                     'item_service': "apple_music",
                     'item_url': artist['attributes']['url'],
-                    'item_thumbnail_url': artist.get("attributes", {}).get("artwork", {}).get("url").replace("{w}", "160").replace("{h}", "160")
+                    'item_thumbnail_url': artwork_url
                 })
 
         if result == 'playlists':
             for playlist in results['results']['playlists']['data']:
+                artwork = playlist.get("attributes", {}).get("artwork")
+                artwork_url = artwork.get("url", "") if artwork else ""
+                artwork_url = artwork_url.replace("{w}", "160").replace("{h}", "160") if artwork_url else ""
                 search_results.append({
                     'item_id': playlist['id'],
                     'item_name': playlist['attributes']['name'],
@@ -227,7 +239,7 @@ def apple_music_get_search_results(session, search_term, content_types):
                     'item_type': "playlist",
                     'item_service': "apple_music",
                     'item_url': playlist['attributes']['url'],
-                    'item_thumbnail_url': playlist.get("attributes", {}).get("artwork", {}).get("url").replace("{w}", "160").replace("{h}", "160")
+                    'item_thumbnail_url': artwork_url
                 })
 
     return search_results
@@ -255,7 +267,7 @@ def apple_music_get_track_metadata(session, item_id):
     # Fallback to splitting artistName if no artists found in included list
     if not artists:
         artist_name_str = track_data.get('data', [])[0].get('attributes', {}).get('artistName', '')
-        for artist in artist_name_str.replace("&", ",").split(","):
+        for artist in artist_name_str.split(","):
             artists.append(artist.strip())
 
     info = {}

@@ -2,15 +2,15 @@
 <!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
 <pkgmetadata>
         <maintainer type="person" proxied="yes">
-                <email>justin026@protonmail.com</email>
+                <email>[EMAIL]</email>
                 <name>Justin</name>
         </maintainer>
         <use>
                 <flag name="webui">
-                        Install OnTheSpot Web UI systemd/OpenRC service
+                        Install OnTheSpotRebuilt Web UI systemd/OpenRC service
                 </flag>
         </use>
         <upstream>
-                <remote-id type="github">justin025/onthespot</remote-id>
+                <remote-id type="github">john20xdoe/onthespot-fork</remote-id>
         </upstream>
 </pkgmetadata>

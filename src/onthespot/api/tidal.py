@@ -96,7 +96,7 @@ def tidal_login_user(account):
             for acc in cfg_copy:
                 if acc["uuid"] == account['uuid']:
                     acc['login']['access_token'] = auth_data["access_token"]
-                    acc['login']['expires_in'] = auth_data["expires_in"] + time.time()
+                    acc['login']['token_expiry'] = auth_data["expires_in"] + time.time()
                     account = acc
             config.set('accounts', cfg_copy)
             config.save()

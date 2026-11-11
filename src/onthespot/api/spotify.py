@@ -126,8 +126,9 @@ def spotify_new_session():
         time.sleep(1)
         if zs.has_valid_session():
             logger.info(f"Grabbed {zs._ZeroconfServer__session} for {zs._ZeroconfServer__session.username()}")
-            if zs._ZeroconfServer__session.username() in config.get('accounts'):
+            if any(a.get('login', {}).get('username') == zs._ZeroconfServer__session.username() for a in config.get('accounts')):
                 logger.info("Account already exists")
+                zs.close()
                 return False
             else:
                 # I wish there was a way to get credentials without saving to
